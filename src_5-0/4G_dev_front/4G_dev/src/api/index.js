@@ -1,0 +1,166 @@
+import request from '../utils/request'
+
+const api = {
+    login(data) {
+        return request({
+            url: '/login',
+            method: 'POST',
+            data
+        })
+    },
+    getDeviceList(data) {
+        return request({
+            url: '/get-devicelist',
+            method: 'POST',
+            data
+        })
+    },
+    getUserList(data) {
+        return request({
+            url: '/user',
+            method: 'POST',
+            data
+        })
+    },
+    Adddevice(data) {
+        return request({
+            url: '/add/device',
+            method: 'POST',
+            data
+        })
+    },
+    ModifyDevice(data) {
+        return request({
+            url: '/modify-device',
+            method: 'POST',
+            data
+        })
+    },
+    DeleteDevice(data) {
+        return request({
+            url: '/remove/device',
+            method: 'POST',
+            data
+        })
+    },
+    Modifyuser(data) {
+        return request({
+            url: '/modifyuser',
+            method: 'POST',
+            data
+        })
+    },
+    Permuser(data) {
+        return request({
+            url: '/Permuser',
+            method: 'POST',
+            data
+        })
+    },
+    Registeruser(data) {
+        return request({
+            url: '/register',
+            method: 'POST',
+            data
+        })
+    },
+    Deleteuser(data) {
+        return request({
+            url: '/remove-user',
+            method: 'POST',
+            data
+        })
+    },
+    Changeuser(data) {
+        return request({
+            url: '/change-user',
+            method: 'POST',
+            data
+        })
+    },
+    logout() {
+        return request({
+            url: '/logout',
+            method: 'POST'
+        })
+    },
+    getvariables(data) {
+        return request({
+            url: '/getvariables',
+            method: 'POST',
+            data
+        })
+    },
+    addvariable(data) {
+        return request({
+            url: '/addvariable',
+            method: 'POST',
+            data
+        })
+    },
+    modifyvariable(data) {
+        return request({
+            url: '/updatevariable',
+            method: 'POST',
+            data
+        })
+    },
+    deletevariable(data) {
+        return request({
+            url: '/deletevariable',
+            method: 'POST',
+            data
+        })
+    },
+    getvarbydeviceid(data) {
+        return request({
+            url: '/getvarbydeviceid',
+            method: 'POST',
+            data
+        })
+    },
+    downpayload(data) {
+        return request({
+            url: '/payload',
+            method: 'POST',
+            data
+        })
+    },
+    query(data) {
+        return request({
+            url: '/query',
+            method: 'POST',
+            data
+        })
+    },
+    recoveryvariable(data) {
+        return request({
+            url: '/recoveryvariable',
+            method: 'POST',
+            data
+        })
+    },
+    dataquery(data) {
+        return request({
+            url: '/dataquery',
+            method: 'POST',
+            data
+        })
+    },
+    Getdata(data) {
+        return request({
+            url: '/data',
+            method: 'POST',
+            data
+        })
+    },
+    alldata(data) {
+        return request({
+            url: '/alldata',
+            method: 'POST',
+            data
+        })
+    }
+}
+
+export default api

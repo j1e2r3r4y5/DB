@@ -1,0 +1,2212 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modbus多从站多分区寄存器区间划分算法设计文档</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.6.1/dist/mermaid.min.js"></script>
+    <style>
+
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --primary-color: #667eea;
+    --success-color: #10b981;
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --text-muted: #9ca3af;
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --border-color: #e5e7eb;
+    --border-radius-lg: 16px;
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    --transition-normal: 300ms ease;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    line-height: 1.7;
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+    display: flex;
+    min-height: 100vh;
+}
+
+.sidebar {
+    width: 280px;
+    background: var(--bg-primary);
+    height: 100vh;
+    position: fixed;
+    left: 0;
+    top: 0;
+    overflow-y: auto;
+    box-shadow: var(--shadow-md);
+    z-index: 100;
+    transition: transform var(--transition-normal);
+}
+
+.sidebar-header {
+    padding: 24px 20px;
+    background: var(--primary-gradient);
+    color: white;
+}
+
+.sidebar-header h3 {
+    font-size: 1.2em;
+    margin-bottom: 8px;
+}
+
+.sidebar-nav {
+    padding: 16px 0;
+}
+
+.nav-section {
+    margin-bottom: 16px;
+}
+
+.nav-title {
+    padding: 8px 20px;
+    font-size: 0.75em;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    font-weight: 600;
+}
+
+.nav-link {
+    display: block;
+    padding: 10px 20px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: all 150ms ease;
+    border-left: 3px solid transparent;
+    font-size: 0.95em;
+}
+
+.nav-link:hover, .nav-link.active {
+    background: var(--bg-tertiary);
+    color: var(--primary-color);
+    border-left-color: var(--primary-color);
+}
+
+.main-content {
+    flex: 1;
+    margin-left: 280px;
+    min-height: 100vh;
+}
+
+.menu-toggle {
+    display: none;
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    width: 50px;
+    height: 50px;
+    background: var(--primary-gradient);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    box-shadow: var(--shadow-lg);
+    cursor: pointer;
+    z-index: 1000;
+    font-size: 1.5em;
+}
+
+.header {
+    background: var(--primary-gradient);
+    color: white;
+    padding: 50px 40px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+}
+
+.header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
+    animation: pulse 4s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.5; }
+    50% { transform: scale(1.1); opacity: 0.8; }
+}
+
+.header h1 {
+    font-size: 2.5em;
+    margin-bottom: 15px;
+    position: relative;
+    z-index: 1;
+}
+
+.badge-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 20px;
+    position: relative;
+    z-index: 1;
+}
+
+.badge {
+    padding: 8px 18px;
+    border-radius: 50px;
+    font-size: 0.9em;
+    font-weight: 500;
+    background: rgba(255,255,255,0.2);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.3);
+    animation: slideIn 0.5s ease backwards;
+}
+
+.badge:nth-child(1) { animation-delay: 0.1s; }
+.badge:nth-child(2) { animation-delay: 0.2s; }
+.badge:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.badge-success {
+    background: rgba(16, 185, 129, 0.9);
+    border-color: rgba(16, 185, 129, 1);
+}
+
+.content {
+    background: var(--bg-primary);
+    padding: 50px;
+    margin: 30px;
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-md);
+    animation: fadeIn 0.8s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+h1, h2, h3, h4, h5, h6 {
+    margin-top: 2em;
+    margin-bottom: 0.8em;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+h1 {
+    font-size: 2em;
+    color: var(--text-primary);
+    padding-bottom: 15px;
+    border-bottom: 3px solid var(--primary-color);
+}
+
+h2 {
+    color: var(--primary-color);
+    border-left: 5px solid var(--primary-color);
+    padding-left: 20px;
+    margin: 40px 0 25px;
+    font-size: 1.6em;
+    position: relative;
+    scroll-margin-top: 30px;
+}
+
+h2::after {
+    content: '';
+    position: absolute;
+    bottom: -10px;
+    left: 20px;
+    width: 60px;
+    height: 3px;
+    background: var(--primary-gradient);
+    border-radius: 2px;
+}
+
+h3 {
+    color: var(--text-primary);
+    margin: 30px 0 15px;
+    font-size: 1.3em;
+    scroll-margin-top: 20px;
+}
+
+h4 {
+    color: var(--text-secondary);
+    margin: 20px 0 12px;
+    font-size: 1.1em;
+}
+
+code {
+    background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-family: 'Fira Code', 'Consolas', 'Monaco', monospace;
+    font-size: 0.9em;
+    color: #e11d48;
+    border: 1px solid var(--border-color);
+}
+
+pre {
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    color: #e2e8f0;
+    padding: 25px;
+    border-radius: 12px;
+    overflow-x: auto;
+    margin: 20px 0;
+    font-size: 0.9em;
+    line-height: 1.6;
+    box-shadow: var(--shadow-md);
+    position: relative;
+}
+
+pre::before {
+    content: 'CODE';
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    font-size: 0.7em;
+    color: #64748b;
+    font-weight: 600;
+}
+
+pre code {
+    background: none;
+    padding: 0;
+    color: inherit;
+    border: none;
+}
+
+.table-wrapper {
+    overflow-x: auto;
+    margin: 25px 0;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+}
+
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 0.95em;
+    background: var(--bg-primary);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+th {
+    background: var(--primary-gradient);
+    color: white;
+    padding: 16px 14px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 0.85em;
+    letter-spacing: 0.5px;
+}
+
+th:first-child { border-top-left-radius: 12px; }
+th:last-child { border-top-right-radius: 12px; }
+
+td {
+    padding: 14px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+    transition: all 150ms ease;
+}
+
+tbody tr { transition: all var(--transition-normal); }
+tbody tr:hover {
+    background: var(--bg-tertiary);
+    transform: scale(1.01);
+}
+
+tbody tr:last-child td { border-bottom: none; }
+
+ul, ol { margin: 15px 0 20px 30px; }
+li { margin: 8px 0; padding-left: 5px; }
+
+blockquote {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border-left: 5px solid #3b82f6;
+    padding: 20px 25px;
+    margin: 25px 0;
+    border-radius: 0 12px 12px 0;
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+}
+
+.progress-bar {
+    position: fixed;
+    top: 0;
+    left: 280px;
+    right: 0;
+    height: 4px;
+    background: var(--primary-gradient);
+    z-index: 1001;
+    transition: width 0.1s linear;
+}
+
+.back-to-top {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 56px;
+    height: 56px;
+    background: var(--primary-gradient);
+    color: white;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: var(--shadow-lg);
+    transition: all var(--transition-normal);
+    border: none;
+    font-size: 1.5em;
+    opacity: 0;
+    visibility: hidden;
+    z-index: 1000;
+}
+
+.back-to-top.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.back-to-top:hover {
+    transform: translateY(-5px) scale(1.1);
+    box-shadow: var(--shadow-xl);
+}
+
+.footer {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 0.95em;
+    background: var(--bg-primary);
+    margin: 30px;
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 1px 2px 0 rgba(0,0,0,0.05);
+}
+
+.footer::before {
+    content: '✨';
+    display: block;
+    font-size: 1.5em;
+    margin-bottom: 10px;
+}
+
+a {
+    color: var(--primary-color);
+    text-decoration: none;
+    transition: all 150ms ease;
+}
+
+a:hover {
+    color: #764ba2;
+}
+
+.overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 99;
+}
+
+.overlay.active {
+    display: block;
+}
+
+@media (max-width: 1024px) {
+    .sidebar { transform: translateX(-100%); }
+    .sidebar.open { transform: translateX(0); }
+    .main-content { margin-left: 0; }
+    .menu-toggle { display: flex; align-items: center; justify-content: center; }
+    .progress-bar { left: 0; }
+    .content, .footer { margin: 20px; padding: 30px; }
+}
+
+@media (max-width: 768px) {
+    .header { padding: 40px 20px; }
+    .header h1 { font-size: 1.8em; }
+    .content, .footer { margin: 15px; padding: 25px 20px; }
+    h1 { font-size: 1.6em; }
+    h2 { font-size: 1.3em; }
+    .badge { padding: 6px 12px; font-size: 0.8em; }
+    .back-to-top { width: 46px; height: 46px; bottom: 20px; right: 20px; font-size: 1.2em; }
+}
+
+@media print {
+    .sidebar,
+    .menu-toggle,
+    .back-to-top,
+    .progress-bar,
+    .overlay,
+    .theme-toggle,
+    .copy-btn {
+        display: none !important;
+    }
+    
+    body {
+        background: white !important;
+        color: black !important;
+        font-size: 12pt;
+    }
+    
+    .main-content {
+        margin: 0 !important;
+        padding: 20px !important;
+        box-shadow: none !important;
+    }
+    
+    a[href^="http"]::after {
+        content: " (" attr(href) ")";
+        font-size: 0.8em;
+        color: #666;
+    }
+    
+    h1, h2, h3 {
+        page-break-after: avoid;
+    }
+    
+    pre, table {
+        page-break-inside: avoid;
+    }
+}
+
+.theme-toggle {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 50px;
+    height: 50px;
+    background: var(--primary-gradient);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    box-shadow: var(--shadow-lg);
+    cursor: pointer;
+    z-index: 1000;
+    font-size: 1.5em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-normal);
+}
+
+.theme-toggle:hover {
+    transform: scale(1.1) rotate(15deg);
+    box-shadow: var(--shadow-xl);
+}
+
+.copy-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    padding: 6px 12px;
+    background: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.8em;
+    font-weight: 500;
+    opacity: 0;
+    transition: opacity 150ms ease;
+    z-index: 10;
+}
+
+pre:hover .copy-btn {
+    opacity: 1;
+}
+
+.copy-btn:hover {
+    background: #764ba2;
+    transform: scale(1.05);
+}
+
+.copy-btn.copied {
+    background: var(--success-color);
+}
+
+pre {
+    position: relative;
+}
+
+.header-actions {
+    position: absolute;
+    top: 20px;
+    right: 40px;
+    z-index: 10;
+}
+
+@media (max-width: 1024px) {
+    .theme-toggle {
+        top: 80px;
+        right: 20px;
+        width: 44px;
+        height: 44px;
+        font-size: 1.2em;
+    }
+}
+
+@media (max-width: 768px) {
+    .theme-toggle {
+        top: 90px;
+        right: 15px;
+        width: 40px;
+        height: 40px;
+        font-size: 1.1em;
+    }
+}
+
+.search-container {
+    margin-top: 15px;
+    width: 100%;
+}
+
+.search-box {
+    position: relative;
+    width: 100%;
+}
+
+#search-input {
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 0.9em;
+    background: rgba(255,255,255,0.95);
+    color: #1f2937;
+    transition: all 150ms ease;
+}
+
+#search-input:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.3);
+}
+
+.search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 5px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2);
+    max-height: 300px;
+    overflow-y: auto;
+    display: none;
+    z-index: 100;
+}
+
+.search-result-item {
+    display: block;
+    padding: 10px 15px;
+    color: #1f2937;
+    text-decoration: none;
+    font-size: 0.9em;
+    border-bottom: 1px solid #f3f4f6;
+    transition: all 150ms ease;
+}
+
+.search-result-item:hover {
+    background: #f3f4f6;
+    color: #667eea;
+}
+
+.search-result-item:last-child {
+    border-bottom: none;
+}
+
+.search-no-result {
+    padding: 15px;
+    color: #9ca3af;
+    text-align: center;
+    font-size: 0.9em;
+}
+
+
+[data-theme="light"] {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --primary-color: #667eea;
+    --success-color: #10b981;
+    --text-primary: #1f2937;
+    --text-secondary: #6b7280;
+    --text-muted: #9ca3af;
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --border-color: #e5e7eb;
+}
+
+
+[data-theme="dark"] {
+    --primary-gradient: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    --primary-color: #818cf8;
+    --success-color: #34d399;
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --text-muted: #9ca3af;
+    --bg-primary: #111827;
+    --bg-secondary: #030712;
+    --bg-tertiary: #1f2937;
+    --border-color: #374151;
+}
+
+[data-theme="dark"] pre {
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+}
+
+[data-theme="dark"] code {
+    background: linear-gradient(135deg, #374151 0%, #4b5563 100%);
+    color: #fbbf24;
+}
+
+[data-theme="dark"] blockquote {
+    background: linear-gradient(135deg, #1e3a5f 0%, #1e40af 100%);
+    border-left-color: #60a5fa;
+}
+
+[data-theme="dark"] table {
+    background: var(--bg-primary);
+}
+
+[data-theme="dark"] tbody tr:hover {
+    background: #374151;
+}
+
+    </style>
+</head>
+<body>
+    <button class="menu-toggle" id="menuToggle">☰</button>
+    <button class="theme-toggle" id="themeToggle" aria-label="切换主题">🌙</button>
+    <div class="overlay" id="overlay"></div>
+    <div class="progress-bar" id="progressBar"></div>
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+            <h3>📚 文档导航</h3>
+            <p style="font-size: 0.9em; opacity: 0.9;">Modbus多从站多分区寄存器区间划分算法设计文档</p>
+        </div>
+<nav class="sidebar-nav"><div class="nav-section"><div class="nav-title">目录导航</div><a href="#1-背景与目标" class="nav-link">1. 背景与目标</a><a href="#11-系统架构" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">1.1 系统架构</a><a href="#12-业务场景" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">1.2 业务场景</a><a href="#13-优化目标" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">1.3 优化目标</a><a href="#14-约束条件" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">1.4 约束条件</a><a href="#2-项目契合度分析" class="nav-link">2. 项目契合度分析</a><a href="#21-与现有代码匹配" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">2.1 与现有代码匹配</a><a href="#22-ml307c-dc-cn模组参数从pdf提取" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">2.2 ML307C-DC-CN模组参数（从PDF提取）</a><a href="#23-关键数据格式从payloadgo提取" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">2.3 关键数据格式（从payload.go提取）</a><a href="#24-数据长度计算" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">2.4 数据长度计算</a><a href="#3-算法设计" class="nav-link">3. 算法设计</a><a href="#31-问题定义" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">3.1 问题定义</a><a href="#32-核心实现函数" class="nav-link">3.2 核心实现函数</a><a href="#4-核心总纲完整最优解算法优化体系" class="nav-link">4. 核心总纲：完整最优解算法优化体系</a><a href="#41-完整最优解算法优化闭环" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">4.1 完整最优解算法优化闭环</a><a href="#42-关键承诺" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">4.2 关键承诺</a><a href="#5-问题预处理分组解耦" class="nav-link">5. 问题预处理：分组解耦</a><a href="#51-强制分组解耦" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">5.1 强制分组解耦</a><a href="#52-连续变量优化检测" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">5.2 连续变量优化检测</a><a href="#53-排序处理" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">5.3 排序处理</a><a href="#6-动态规划核心算法详细说明" class="nav-link">6. 动态规划核心算法详细说明</a><a href="#61-算法原理" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">6.1 算法原理</a><a href="#62-核心数据结构" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">6.2 核心数据结构</a><a href="#63-前缀和计算" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">6.3 前缀和计算</a><a href="#64-核心实现" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">6.4 核心实现</a><a href="#65-分割开销缓存" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">6.5 分割开销缓存</a><a href="#66-收益" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">6.6 收益</a><a href="#7-pareto筛选优化" class="nav-link">7. Pareto筛选优化</a><a href="#71-双目标优化" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">7.1 双目标优化</a><a href="#72-pareto最优性判断" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">7.2 Pareto最优性判断</a><a href="#73-收益" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">7.3 收益</a><a href="#74-pareto前沿图示" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">7.4 Pareto前沿图示</a><a href="#8-区间构建算法" class="nav-link">8. 区间构建算法</a><a href="#81-从分割点构建区间" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">8.1 从分割点构建区间</a><a href="#9-核心计算函数" class="nav-link">9. 核心计算函数</a><a href="#91-数据字节数计算" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">9.1 数据字节数计算</a><a href="#92-mqtt报文计算" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">9.2 MQTT报文计算</a><a href="#93-变量长度解析" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">9.3 变量长度解析</a><a href="#94-默认存储限额构建" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">9.4 默认存储限额构建</a><a href="#95-限额解析controller层" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">9.5 限额解析（Controller层）</a><a href="#11-存储限额预设" class="nav-link">11. 存储限额预设</a><a href="#111-三档预设方案" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">11.1 三档预设方案</a><a href="#112-存储限额数据结构" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">11.2 存储限额数据结构</a><a href="#113-选择建议" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">11.3 选择建议</a><a href="#12-数据结构完整定义" class="nav-link">12. 数据结构完整定义</a><a href="#121-核心类型定义-internalmodelmodbusrangego" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">12.1 核心类型定义 (internal/model/modbus_range.go)</a><a href="#13-api接口完整说明" class="nav-link">13. API接口完整说明</a><a href="#131-接口列表" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">13.1 接口列表</a><a href="#132-请求结构完整定义" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">13.2 请求结构完整定义</a><a href="#133-响应结构完整定义" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">13.3 响应结构完整定义</a><a href="#134-路由注册-internalcmdcmdgo" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">13.4 路由注册 (internal/cmd/cmd.go)</a><a href="#135-请求示例" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">13.5 请求示例</a><a href="#136-响应示例" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">13.6 响应示例</a><a href="#14-使用示例" class="nav-link">14. 使用示例</a><a href="#141-基本使用获取单一最优解" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">14.1 基本使用：获取单一最优解</a><a href="#142-使用预设方案" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">14.2 使用预设方案</a><a href="#143-获取pareto解集" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">14.3 获取Pareto解集</a><a href="#144-构建优化配置" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">14.4 构建优化配置</a><a href="#15-算法流程详解" class="nav-link">15. 算法流程详解</a><a href="#151-整体架构" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">15.1 整体架构</a><a href="#152-单组dp计算流程" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">15.2 单组DP计算流程</a><a href="#16-文件结构" class="nav-link">16. 文件结构</a><a href="#17-总结" class="nav-link">17. 总结</a><a href="#171-核心优化点" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">17.1 核心优化点</a><a href="#172-最优性保证" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">17.2 最优性保证</a><a href="#173-适用场景" class="nav-link" style="padding-left: 35px; font-size: 0.9em;">17.3 适用场景</a></div></nav>
+    </aside>
+    <main class="main-content">
+        <div class="header">
+            <h1>📘 Modbus多从站多分区寄存器区间划分算法设计文档</h1>
+            <div class="badge-container">
+            <span class="badge">版本: v2.2</span>
+            </div>
+        </div>
+        <div class="content">
+<h1 id="modbus">Modbus多从站多分区寄存器区间划分算法设计文档</h1>
+<blockquote>
+<p>版本: v2.2 | 更新日期: 2026-04-24 | 状态: 已实现完整算法</p>
+</blockquote>
+<h2 id="1">1. 背景与目标</h2>
+<h3 id="11">1.1 系统架构</h3>
+<div class="codehilite"><pre><span></span><code>┌─────────────────────────────────────────────────────────────────────────────┐
+│                              云平台 (Go后端)                                 │
+│                    我们的算法运行在这里 → 优化配置下发                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │ MQTT
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          ML307C-DC-CN 通信模组                              │
+│  ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐         │
+│  │   ASR1605      │    │   4MB pSRAM    │    │   4MB FLASH    │         │
+│  │   (主芯片)      │    │                │    │                │         │
+│  └─────────────────┘    └─────────────────┘    └─────────────────┘         │
+│                                                                             │
+│  • LTE Cat.1 (移动/电信/联通)                                              │
+│  • 下行10Mbps / 上行5Mbps                                                  │
+│  • MQTT Topic最大256字节                                                   │
+│  • 最多3个订阅主题，6个连接ID (0~5)                                        │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │ UART/AT命令
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              主控MCU (待选型)                                 │
+│  ┌─────────────────┐    ┌─────────────────┐                               │
+│  │   Flash        │    │      RAM        │                               │
+│  │  (配置存储)      │    │  (数据缓存)    │                               │
+│  │                │    │                 │                               │
+│  │  128B~2MB     │    │   2KB~512KB    │                               │
+│  └─────────────────┘    └─────────────────┘                               │
+│                                                                             │
+│  ← 存储限额约束的真正来源！主控MCU资源决定算法边界                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                        │ Modbus RTU
+                                        ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            Modbus从机设备                                    │
+│  • 三菱FX5U-32MT/ES (PLC)                                                  │
+│  • 施耐德TM221CE16R (PLC)                                                  │
+│  • SR40 (AC/DC/继电器)                                                     │
+│  • 其他Modbus设备...                                                       │
+└─────────────────────────────────────────────────────────────────────────────┘
+</code></pre></div>
+
+<h3 id="12">1.2 业务场景</h3>
+<p>在工业物联网场景中，主控MCU通过ML307C-DC-CN通信模组连接云平台，下挂多个Modbus从机设备（PLC、继电器、传感器等）。</p>
+<p><strong>现状问题：</strong>
+- 每个Modbus变量单独配置，导致配置命令繁多
+- 主设备存储资源有限（Flash/RAM受限）
+- MQTT通信带宽宝贵</p>
+<h3 id="13">1.3 优化目标</h3>
+<div class="codehilite"><pre><span></span><code>目标1: 减少配置命令存储 (Flash)
+目标2: 减少数据缓存 (RAM)
+目标3: 减少MQTT通信开销 (1次配置下发 + N次数据上发)
+</code></pre></div>
+
+<h3 id="14">1.4 约束条件</h3>
+<ul>
+<li>存储限额约束（主控MCU资源限制）</li>
+<li>MQTT MTU限制（1024字节）</li>
+<li>Modbus协议限制（寄存器地址连续性）</li>
+</ul>
+<hr />
+<h2 id="2">2. 项目契合度分析</h2>
+<h3 id="21">2.1 与现有代码匹配</h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>项目</th>
+<th>匹配位置</th>
+<th>状态</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>报文格式</td>
+<td><code>payload.go</code> 功能码0x02/0x05</td>
+<td>✅ 完全匹配</td>
+</tr>
+<tr>
+<td>数据长度计算</td>
+<td><code>payload.go</code></td>
+<td>✅ 完全匹配</td>
+</tr>
+<tr>
+<td>MQTT MTU</td>
+<td>ML307C模组规格</td>
+<td>✅ 1024字节</td>
+</tr>
+<tr>
+<td>配置命令格式</td>
+<td>每区间6字节</td>
+<td>✅ 完全匹配</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="22-ml307c-dc-cnpdf">2.2 ML307C-DC-CN模组参数（从PDF提取）</h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>参数</th>
+<th>值</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>芯片平台</td>
+<td>ASR1605</td>
+<td>翱捷科技</td>
+</tr>
+<tr>
+<td>通信制式</td>
+<td>LTE Cat.1</td>
+<td>移动/电信/联通</td>
+</tr>
+<tr>
+<td>理论速率</td>
+<td>下行10Mbps / 上行5Mbps</td>
+<td>-</td>
+</tr>
+<tr>
+<td>模组RAM</td>
+<td>4MB pSRAM</td>
+<td>-</td>
+</tr>
+<tr>
+<td>模组Flash</td>
+<td>4MB FLASH</td>
+<td>-</td>
+</tr>
+<tr>
+<td>MQTT最大数据包</td>
+<td>0~1024字节</td>
+<td>关键约束</td>
+</tr>
+<tr>
+<td>MQTT Topic最大长度</td>
+<td>256字节</td>
+<td>-</td>
+</tr>
+<tr>
+<td>MQTT订阅主题数</td>
+<td>最多3个</td>
+<td>-</td>
+</tr>
+<tr>
+<td>MQTT连接ID</td>
+<td>0~5 (共6个)</td>
+<td>-</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>注意：</strong> ML307C是通信模组，存储限额约束实际来源于<strong>主控MCU</strong>，不是ML307C本身。</p>
+<h3 id="23-payloadgo">2.3 关键数据格式（从payload.go提取）</h3>
+<p><strong>配置下发（功能码0x02）：</strong></p>
+<div class="codehilite"><pre><span></span><code>┌──────────┬──────────┬─────────────────────────────────────────┐
+│ 功能码(1)│ 长度(2)  │ 配置项N×6  │                         │
+│ 0x02     │ 总长度   │ 每项:     │                         │
+│          │          │ 从站(1)  │                         │
+│          │          │ 类型(1)   │                         │
+│          │          │ 起始(2)  │                         │
+│          │          │ 长度(2)   │                         │
+└──────────┴──────────┴─────────────────────────────────────────┘
+</code></pre></div>
+
+<p><strong>数据上发（功能码0x05）：</strong></p>
+<div class="codehilite"><pre><span></span><code>┌──────────┬──────────┬─────────────────────────────────────────┐
+│ 功能码(1)│ 长度(2)  │ 数据项                                  │
+│ 0x05     │ 总长度   │ 每项:                                   │
+│          │          │ 从站(1)+类型(1)+地址(2)+长度(2)+值(N)   │
+└──────────┴──────────┴─────────────────────────────────────────┘
+</code></pre></div>
+
+<h3 id="24">2.4 数据长度计算</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 根据寄存器类型计算数据字节数</span>
+<span class="k">switch</span><span class="w"> </span><span class="nx">ModbusType</span><span class="w"> </span><span class="p">{</span>
+<span class="k">case</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="mi">2</span><span class="p">:</span><span class="w">  </span><span class="c1">// Coil, DiscreteInput (位操作)</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="nx">length</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">7</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">8</span><span class="w">  </span><span class="c1">// bit数 → byte数</span>
+<span class="k">case</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="mi">4</span><span class="p">:</span><span class="w">  </span><span class="c1">// HoldingReg, InputReg (字操作)</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">length</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="w">          </span><span class="c1">// 寄存器数 → byte数</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="3">3. 算法设计</h2>
+<h3 id="31">3.1 问题定义</h3>
+<p><strong>输入：</strong></p>
+<div class="codehilite"><pre><span></span><code>Variables (数据库中的变量):
+- DevID:        设备ID
+- ModbusDevice: 从站地址 (1-247)
+- ModbusType:   寄存器类型 (1=Coil,2=Discrete,3=Holding,4=Input)
+- ModbusAddr:   寄存器地址
+- DataLen:      长度(寄存器数或bit数)
+</code></pre></div>
+
+<p><strong>输出：</strong></p>
+<div class="codehilite"><pre><span></span><code>ModbusRange (优化后的区间):
+- SlaveAddr:  从站地址
+- ModbusType: 寄存器类型
+- StartAddr:  起始地址
+- Length:     连续长度(单位根据类型不同)
+- VarCount:   包含的变量数
+</code></pre></div>
+
+<p><strong>目标：</strong>
+- 最小化配置存储 (Flash)
+- 最小化数据缓存 (RAM)
+- 最小化MQTT通信开销</p>
+<hr />
+<h2 id="32">3.2 核心实现函数</h2>
+<p><strong>internal/logic/modbus_range_optimizer.go 关键函数：</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 优化器构造函数</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">NewModbusRangeOptimizer</span><span class="p">(</span><span class="nx">limit</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span>
+
+<span class="c1">// 构建默认存储限额</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">BuildDefaultStorageLimit</span><span class="p">()</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span>
+
+<span class="c1">// 主优化函数 - 返回单一最优解</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">Optimize</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">RangeOptimizationResult</span>
+
+<span class="c1">// Pareto多目标优化 - 返回多个最优解</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">GetParetoSolutions</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoResult</span>
+
+<span class="c1">// 动态规划核心算法 - 计算单组的Pareto解集</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">computeParetoForGroup</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span>
+
+<span class="c1">// 从分割信息构建区间</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">buildRangesFromSplits</span><span class="p">(</span><span class="nx">splits</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">endIndex</span><span class="w"> </span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">addrList</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">prefixSum</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span>
+
+<span class="c1">// 判断解是否Pareto最优</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">isParetoOptimal</span><span class="p">(</span><span class="nx">sol</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="p">,</span><span class="w"> </span><span class="nx">allSolutions</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="p">,</span><span class="w"> </span><span class="nx">maxRanges</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span>
+
+<span class="c1">// 分组函数 - 按从站和类型分组</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">groupBySlaveAndType</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">][]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span>
+
+<span class="c1">// 数据字节计算</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateDataBytesForRange</span><span class="p">(</span><span class="nx">length</span><span class="w"> </span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">modbusType</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span>
+
+<span class="c1">// MQTT消息计算</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateConfigMessageBytes</span><span class="p">(</span><span class="nx">ranges</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateDataMessageBytes</span><span class="p">(</span><span class="nx">ranges</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">totalBytes</span><span class="w"> </span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">packetCount</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span>
+
+<span class="c1">// 辅助函数</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">checkAllContiguous</span><span class="p">(</span><span class="nx">addrList</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">estimateMqttDataCount</span><span class="p">(</span><span class="nx">ranges</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateVariableLength</span><span class="p">(</span><span class="nx">v</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">parseModbusType</span><span class="p">(</span><span class="nx">mt</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span>
+
+<span class="c1">// 构建优化配置</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">BuildOptimizedConfig</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">OptimizedConfig</span>
+
+<span class="c1">// 便捷函数</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">OptimizeModbusVariables</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">,</span><span class="w"> </span><span class="nx">limit</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">RangeOptimizationResult</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">BuildModbusOptimizedConfig</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">,</span><span class="w"> </span><span class="nx">limit</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">OptimizedConfig</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">GetModbusParetoSolutions</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">,</span><span class="w"> </span><span class="nx">limit</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoResult</span>
+</code></pre></div>
+
+<p><strong>internal/controller/modbus_optimizer.go 关键函数：</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="nx">cModbusOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">Optimize</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">req</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusOptimizerReq</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">ModbusOptimizerRes</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="nx">cModbusOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">BuildConfig</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">req</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusBuildConfigReq</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">ModbusBuildConfigRes</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="nx">cModbusOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">GetPresets</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">ModbusGetPresetsRes</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="nx">cModbusOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">GetLimit</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">req</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusGetLimitReq</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">ModbusGetLimitRes</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="nx">cModbusOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">GetParetoSolutions</span><span class="p">(</span><span class="nx">ctx</span><span class="w"> </span><span class="nx">context</span><span class="p">.</span><span class="nx">Context</span><span class="p">,</span><span class="w"> </span><span class="nx">req</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusParetoReq</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="o">*</span><span class="nx">ModbusParetoRes</span><span class="p">,</span><span class="w"> </span><span class="kt">error</span><span class="p">)</span>
+</code></pre></div>
+
+<hr />
+<h2 id="4">4. 核心总纲：完整最优解算法优化体系</h2>
+<p>基于<strong>动态规划(DP) + 帕累托(Pareto)双目标优化</strong>底层框架，构建「全局最优、灵活选择」的算法方案。</p>
+<h3 id="41">4.1 完整最优解算法优化闭环</h3>
+<div class="codehilite"><pre><span></span><code>输入变量 → 分组解耦 → 动态规划DP计算 → Pareto筛选
+→ 全局Pareto最优解集 → 输出
+</code></pre></div>
+
+<h3 id="42">4.2 关键承诺</h3>
+<ol>
+<li><strong>最优性保证：</strong> 100% 找到全局最优解，无丢失、无近似</li>
+<li><strong>灵活性保证：</strong> 提供Pareto解集，支持存储/通信权衡选择</li>
+<li><strong>易用性保证：</strong> 提供预设方案，支持自定义限额</li>
+</ol>
+<hr />
+<h2 id="5">5. 问题预处理：分组解耦</h2>
+<h3 id="51">5.1 强制分组解耦</h3>
+<p>按 <code>从站地址 + 寄存器类型</code> 严格分组，<strong>禁止跨站/跨区合并</strong>（Modbus协议硬约束），将复杂问题拆解为独立一维子问题，分组间无最优解耦合。</p>
+<p><strong>实现代码：</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">groupBySlaveAndType</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">][]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">groups</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">][]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">variables</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">key</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sprintf</span><span class="p">(</span><span class="s">&quot;%d_%s&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">ModbusDevice</span><span class="p">,</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">ModbusType</span><span class="p">)</span>
+<span class="w">        </span><span class="nx">groups</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">groups</span><span class="p">[</span><span class="nx">key</span><span class="p">],</span><span class="w"> </span><span class="nx">v</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">groups</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="52">5.2 连续变量优化检测</h3>
+<p>在开始DP计算前，先检测组内所有变量是否地址连续。如果是连续的，直接合并为单个区间，避免复杂计算。</p>
+<p><strong>实现代码：</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">checkAllContiguous</span><span class="p">(</span><span class="nx">addrList</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">addrList</span><span class="p">);</span><span class="w"> </span><span class="nx">i</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">addrList</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="o">-</span><span class="nx">addrList</span><span class="p">[</span><span class="nx">i</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="53">5.3 排序处理</h3>
+<p>对每组内的变量按地址进行升序排序，确保DP计算的正确性。</p>
+<hr />
+<h2 id="6">6. 动态规划核心算法详细说明</h2>
+<h3 id="61">6.1 算法原理</h3>
+<p>使用动态规划求解最优区间划分问题，状态定义如下：</p>
+<ul>
+<li><code>dp[i][k]</code> 表示前 i 个变量划分为 k 个区间的最优解</li>
+<li>状态转移：枚举最后一个区间的起始位置 j，计算从 j 到 i 的区间开销，选择最优组合</li>
+<li>目标：最小化总开销（配置字节 + 数据字节）</li>
+</ul>
+<h3 id="62">6.2 核心数据结构</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// DP状态内部结构</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">dpEntry</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">splits</span><span class="w">             </span><span class="p">[]</span><span class="kt">int</span><span class="w">  </span><span class="c1">// 分割点记录</span>
+<span class="w">    </span><span class="nx">configBytes</span><span class="w">       </span><span class="kt">int</span><span class="w">    </span><span class="c1">// 配置字节数</span>
+<span class="w">    </span><span class="nx">dataBytes</span><span class="w">         </span><span class="kt">int</span><span class="w">    </span><span class="c1">// 数据字节数</span>
+<span class="w">    </span><span class="nx">pktCount</span><span class="w">          </span><span class="kt">int</span><span class="w">    </span><span class="c1">// 数据报文数</span>
+<span class="w">    </span><span class="nx">totalMessageBytes</span><span class="w"> </span><span class="kt">int</span><span class="w">    </span><span class="c1">// 总报文字节数</span>
+<span class="p">}</span>
+
+<span class="c1">// 分割开销缓存键</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">splitKey</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">start</span><span class="w"> </span><span class="kt">int</span>
+<span class="w">    </span><span class="nx">end</span><span class="w">   </span><span class="kt">int</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="63">6.3 前缀和计算</h3>
+<p>提前计算变量长度的前缀和数组，用于快速计算任意区间的总长度。</p>
+<div class="codehilite"><pre><span></span><code><span class="nx">prefixSum</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">([]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">addrList</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+<span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">addrList</span><span class="p">);</span><span class="w"> </span><span class="nx">i</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">varLengths</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="64">6.4 核心实现</h3>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">computeParetoForGroup</span><span class="p">(</span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="c1">// 边界情况处理</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">variables</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="p">{}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">variables</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 单个变量，直接返回</span>
+<span class="w">        </span><span class="c1">// ...</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 1. 预处理：构建地址映射和长度数组</span>
+<span class="w">    </span><span class="nx">addrMap</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span>
+<span class="w">    </span><span class="nx">addrList</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">([]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">variables</span><span class="p">))</span>
+<span class="w">    </span><span class="nx">varLengths</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">([]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">variables</span><span class="p">))</span>
+
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="p">,</span><span class="w"> </span><span class="nx">v</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">variables</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">addrMap</span><span class="p">[</span><span class="nx">v</span><span class="p">.</span><span class="nx">ModbusAddr</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">v</span>
+<span class="w">        </span><span class="nx">addrList</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">addrList</span><span class="p">,</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">ModbusAddr</span><span class="p">)</span>
+<span class="w">        </span><span class="nx">varLengths</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">o</span><span class="p">.</span><span class="nx">calculateVariableLength</span><span class="p">(</span><span class="nx">v</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="nx">sort</span><span class="p">.</span><span class="nx">Ints</span><span class="p">(</span><span class="nx">addrList</span><span class="p">)</span>
+
+<span class="w">    </span><span class="c1">// 重新计算排序后的长度</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="p">,</span><span class="w"> </span><span class="nx">addr</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">addrList</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">varLengths</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">o</span><span class="p">.</span><span class="nx">calculateVariableLength</span><span class="p">(</span><span class="nx">addrMap</span><span class="p">[</span><span class="nx">addr</span><span class="p">])</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 2. 检查是否全连续，如果是直接合并</span>
+<span class="w">    </span><span class="nx">allContiguous</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">o</span><span class="p">.</span><span class="nx">checkAllContiguous</span><span class="p">(</span><span class="nx">addrList</span><span class="p">)</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">allContiguous</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="c1">// 直接构建单个区间的解</span>
+<span class="w">        </span><span class="c1">// ...</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 3. 计算前缀和</span>
+<span class="w">    </span><span class="nx">prefixSum</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">([]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">addrList</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">addrList</span><span class="p">);</span><span class="w"> </span><span class="nx">i</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="o">+</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">varLengths</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 4. 动态规划计算</span>
+<span class="w">    </span><span class="nx">dp</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="o">*</span><span class="nx">dpEntry</span><span class="p">)</span>
+
+<span class="w">    </span><span class="nx">maxRanges</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">o</span><span class="p">.</span><span class="nx">limit</span><span class="p">.</span><span class="nx">MaxRangeCount</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">maxRanges</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">maxRanges</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">50</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">maxRanges</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">variables</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">maxRanges</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">variables</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">addrList</span><span class="p">);</span><span class="w"> </span><span class="nx">i</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">dp</span><span class="p">[</span><span class="nx">i</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="o">*</span><span class="nx">dpEntry</span><span class="p">)</span>
+
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">maxRanges</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">i</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nx">bestEntry</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">dpEntry</span><span class="p">{}</span>
+
+<span class="w">            </span><span class="c1">// 枚举所有可能的j（分割点）</span>
+<span class="w">            </span><span class="k">for</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">i</span><span class="p">;</span><span class="w"> </span><span class="nx">j</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="kd">var</span><span class="w"> </span><span class="nx">prevEntry</span><span class="w"> </span><span class="o">*</span><span class="nx">dpEntry</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nx">prevEntry</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">dpEntry</span><span class="p">{</span>
+<span class="w">                        </span><span class="nx">splits</span><span class="p">:</span><span class="w">             </span><span class="p">[]</span><span class="kt">int</span><span class="p">{},</span>
+<span class="w">                        </span><span class="nx">configBytes</span><span class="p">:</span><span class="w">       </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                        </span><span class="nx">dataBytes</span><span class="p">:</span><span class="w">         </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                        </span><span class="nx">pktCount</span><span class="p">:</span><span class="w">          </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                        </span><span class="nx">totalMessageBytes</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="k">if</span><span class="w"> </span><span class="nx">prev</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">dp</span><span class="p">[</span><span class="nx">j</span><span class="p">][</span><span class="nx">k</span><span class="o">-</span><span class="mi">1</span><span class="p">];</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="nx">prevEntry</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">prev</span>
+<span class="w">                    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                        </span><span class="k">continue</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">}</span>
+
+<span class="w">                </span><span class="c1">// 计算从j到i的开销</span>
+<span class="w">                </span><span class="nx">cfgBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">dataBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">pktCount</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">computeSplitCost</span><span class="p">(</span><span class="nx">j</span><span class="p">,</span><span class="w"> </span><span class="nx">i</span><span class="p">)</span>
+
+<span class="w">                </span><span class="nx">totalCfg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">prevEntry</span><span class="p">.</span><span class="nx">configBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">cfgBytes</span>
+<span class="w">                </span><span class="nx">totalData</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">prevEntry</span><span class="p">.</span><span class="nx">dataBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">dataBytes</span>
+<span class="w">                </span><span class="nx">totalPkt</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">prevEntry</span><span class="p">.</span><span class="nx">pktCount</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">pktCount</span>
+<span class="w">                </span><span class="nx">totalMsg</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">totalCfg</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">totalData</span>
+
+<span class="w">                </span><span class="c1">// 构建新的分割点</span>
+<span class="w">                </span><span class="nx">newSplits</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">([]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">prevEntry</span><span class="p">.</span><span class="nx">splits</span><span class="p">)</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+<span class="w">                </span><span class="nb">copy</span><span class="p">(</span><span class="nx">newSplits</span><span class="p">,</span><span class="w"> </span><span class="nx">prevEntry</span><span class="p">.</span><span class="nx">splits</span><span class="p">)</span>
+<span class="w">                </span><span class="nx">newSplits</span><span class="p">[</span><span class="nb">len</span><span class="p">(</span><span class="nx">newSplits</span><span class="p">)</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">j</span>
+
+<span class="w">                </span><span class="nx">entry</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">dpEntry</span><span class="p">{</span>
+<span class="w">                    </span><span class="nx">splits</span><span class="p">:</span><span class="w">             </span><span class="nx">newSplits</span><span class="p">,</span>
+<span class="w">                    </span><span class="nx">configBytes</span><span class="p">:</span><span class="w">       </span><span class="nx">totalCfg</span><span class="p">,</span>
+<span class="w">                    </span><span class="nx">dataBytes</span><span class="p">:</span><span class="w">         </span><span class="nx">totalData</span><span class="p">,</span>
+<span class="w">                    </span><span class="nx">pktCount</span><span class="p">:</span><span class="w">          </span><span class="nx">totalPkt</span><span class="p">,</span>
+<span class="w">                    </span><span class="nx">totalMessageBytes</span><span class="p">:</span><span class="w"> </span><span class="nx">totalMsg</span><span class="p">,</span>
+<span class="w">                </span><span class="p">}</span>
+
+<span class="w">                </span><span class="c1">// 更新最优解</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="nx">bestEntry</span><span class="p">.</span><span class="nx">splits</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">entry</span><span class="p">.</span><span class="nx">totalMessageBytes</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">bestEntry</span><span class="p">.</span><span class="nx">totalMessageBytes</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nx">bestEntry</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">entry</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">bestEntry</span><span class="p">.</span><span class="nx">splits</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nx">dp</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="nx">k</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">bestEntry</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 5. 构建每个k的最优解</span>
+<span class="w">    </span><span class="nx">solutionMap</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="p">)</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">i</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">addrList</span><span class="p">);</span><span class="w"> </span><span class="nx">i</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">maxRanges</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">entry</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">dp</span><span class="p">[</span><span class="nx">i</span><span class="p">][</span><span class="nx">k</span><span class="p">];</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">entry</span><span class="p">.</span><span class="nx">splits</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="nx">existing</span><span class="p">,</span><span class="w"> </span><span class="nx">exists</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">solutionMap</span><span class="p">[</span><span class="nx">k</span><span class="p">];</span><span class="w"> </span><span class="p">!</span><span class="nx">exists</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">entry</span><span class="p">.</span><span class="nx">totalMessageBytes</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">existing</span><span class="p">.</span><span class="nx">TotalMessageBytes</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                    </span><span class="nx">solutionMap</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="p">{</span>
+<span class="w">                        </span><span class="nx">Ranges</span><span class="p">:</span><span class="w">              </span><span class="nx">o</span><span class="p">.</span><span class="nx">buildRangesFromSplits</span><span class="p">(</span><span class="nx">entry</span><span class="p">.</span><span class="nx">splits</span><span class="p">,</span><span class="w"> </span><span class="nx">i</span><span class="p">,</span><span class="w"> </span><span class="nx">addrList</span><span class="p">,</span><span class="w"> </span><span class="nx">prefixSum</span><span class="p">,</span><span class="w"> </span><span class="nx">variables</span><span class="p">),</span>
+<span class="w">                        </span><span class="nx">ConfigMessageBytes</span><span class="p">:</span><span class="w">  </span><span class="nx">entry</span><span class="p">.</span><span class="nx">configBytes</span><span class="p">,</span>
+<span class="w">                        </span><span class="nx">DataMessageBytes</span><span class="p">:</span><span class="w">    </span><span class="nx">entry</span><span class="p">.</span><span class="nx">dataBytes</span><span class="p">,</span>
+<span class="w">                        </span><span class="nx">TotalMessageBytes</span><span class="p">:</span><span class="w">   </span><span class="nx">entry</span><span class="p">.</span><span class="nx">totalMessageBytes</span><span class="p">,</span>
+<span class="w">                        </span><span class="nx">RangeCount</span><span class="p">:</span><span class="w">          </span><span class="nx">k</span><span class="p">,</span>
+<span class="w">                        </span><span class="nx">DataPacketCount</span><span class="p">:</span><span class="w">     </span><span class="nx">entry</span><span class="p">.</span><span class="nx">pktCount</span><span class="p">,</span>
+<span class="w">                    </span><span class="p">}</span>
+<span class="w">                </span><span class="p">}</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 6. Pareto筛选</span>
+<span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nx">paretoSolutions</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">maxRanges</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">sol</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">solutionMap</span><span class="p">[</span><span class="nx">k</span><span class="p">];</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">sol</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">o</span><span class="p">.</span><span class="nx">isParetoOptimal</span><span class="p">(</span><span class="nx">sol</span><span class="p">,</span><span class="w"> </span><span class="nx">solutionMap</span><span class="p">,</span><span class="w"> </span><span class="nx">maxRanges</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nx">paretoSolutions</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">paretoSolutions</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="nx">sol</span><span class="p">)</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 7. 兜底：如果Pareto筛选后没有解，返回所有解</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">paretoSolutions</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">for</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">maxRanges</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="nx">sol</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">solutionMap</span><span class="p">[</span><span class="nx">k</span><span class="p">];</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nx">sol</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">                </span><span class="nx">paretoSolutions</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">paretoSolutions</span><span class="p">,</span><span class="w"> </span><span class="o">*</span><span class="nx">sol</span><span class="p">)</span>
+<span class="w">            </span><span class="p">}</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 8. 按区间数排序</span>
+<span class="w">    </span><span class="nx">sort</span><span class="p">.</span><span class="nx">Slice</span><span class="p">(</span><span class="nx">paretoSolutions</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">i</span><span class="p">,</span><span class="w"> </span><span class="nx">j</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">paretoSolutions</span><span class="p">[</span><span class="nx">i</span><span class="p">].</span><span class="nx">RangeCount</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">paretoSolutions</span><span class="p">[</span><span class="nx">j</span><span class="p">].</span><span class="nx">RangeCount</span>
+<span class="w">    </span><span class="p">})</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">paretoSolutions</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="65">6.5 分割开销缓存</h3>
+<p>为避免重复计算，使用缓存存储区间分割的开销。</p>
+<div class="codehilite"><pre><span></span><code><span class="nx">splitCostMap</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">make</span><span class="p">(</span><span class="kd">map</span><span class="p">[</span><span class="nx">splitKey</span><span class="p">]</span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">configBytes</span><span class="w"> </span><span class="kt">int</span>
+<span class="w">    </span><span class="nx">dataBytes</span><span class="w">  </span><span class="kt">int</span>
+<span class="w">    </span><span class="nx">pktCount</span><span class="w">   </span><span class="kt">int</span>
+<span class="p">})</span>
+
+<span class="nx">computeSplitCost</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="kd">func</span><span class="p">(</span><span class="nx">start</span><span class="p">,</span><span class="w"> </span><span class="nx">end</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">configBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">dataBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">pktCount</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">key</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">splitKey</span><span class="p">{</span><span class="nx">start</span><span class="p">,</span><span class="w"> </span><span class="nx">end</span><span class="p">}</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">cost</span><span class="p">,</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">splitCostMap</span><span class="p">[</span><span class="nx">key</span><span class="p">];</span><span class="w"> </span><span class="nx">ok</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">cost</span><span class="p">.</span><span class="nx">configBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">cost</span><span class="p">.</span><span class="nx">dataBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">cost</span><span class="p">.</span><span class="nx">pktCount</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="c1">// 计算开销...</span>
+<span class="w">    </span><span class="c1">// ...</span>
+
+<span class="w">    </span><span class="nx">splitCostMap</span><span class="p">[</span><span class="nx">key</span><span class="p">]</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">configBytes</span><span class="w"> </span><span class="kt">int</span>
+<span class="w">        </span><span class="nx">dataBytes</span><span class="w">  </span><span class="kt">int</span>
+<span class="w">        </span><span class="nx">pktCount</span><span class="w">   </span><span class="kt">int</span>
+<span class="w">    </span><span class="p">}{</span><span class="nx">configBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">dataBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">pktCount</span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">configBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">dataBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">pktCount</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="66">6.6 收益</h3>
+<p>找到全局最优解，保证最优性。</p>
+<hr />
+<h2 id="7-pareto">7. Pareto筛选优化</h2>
+<h3 id="71">7.1 双目标优化</h3>
+<p>优化目标：
+1. 最小化配置字节数（存储）
+2. 最小化数据报文数（通信）</p>
+<h3 id="72-pareto">7.2 Pareto最优性判断</h3>
+<p>一个解是Pareto最优的，当且仅当不存在其他解在所有目标上都不差于它，且至少在一个目标上更好。</p>
+<p><strong>实现代码：</strong></p>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">isParetoOptimal</span><span class="p">(</span><span class="nx">sol</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="p">,</span><span class="w"> </span><span class="nx">allSolutions</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">int</span><span class="p">]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoSolution</span><span class="p">,</span><span class="w"> </span><span class="nx">maxRanges</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="kt">bool</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">maxRanges</span><span class="p">;</span><span class="w"> </span><span class="nx">k</span><span class="o">++</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">other</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">allSolutions</span><span class="p">[</span><span class="nx">k</span><span class="p">]</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">other</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">other</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">sol</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">continue</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">other</span><span class="p">.</span><span class="nx">ConfigMessageBytes</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">sol</span><span class="p">.</span><span class="nx">ConfigMessageBytes</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">            </span><span class="nx">other</span><span class="p">.</span><span class="nx">DataPacketCount</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">sol</span><span class="p">.</span><span class="nx">DataPacketCount</span><span class="w"> </span><span class="o">&amp;&amp;</span>
+<span class="w">            </span><span class="p">(</span><span class="nx">other</span><span class="p">.</span><span class="nx">ConfigMessageBytes</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">sol</span><span class="p">.</span><span class="nx">ConfigMessageBytes</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">other</span><span class="p">.</span><span class="nx">DataPacketCount</span><span class="w"> </span><span class="p">&lt;</span><span class="w"> </span><span class="nx">sol</span><span class="p">.</span><span class="nx">DataPacketCount</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="kc">false</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="kc">true</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="73">7.3 收益</h3>
+<p>输出所有最优权衡方案，支持存储/通信灵活选型。</p>
+<h3 id="74-pareto">7.4 Pareto前沿图示</h3>
+<div class="codehilite"><pre><span></span><code>                    MQTT通信优化 (数据报文)
+                         ▲
+                       5 │
+                         │                    ·
+                       4 │               ·
+                         │           ·
+                       3 │       ·
+                         │   · 方案C (高配置灵活)
+                       2 │·
+                         │·
+                       1 │● 方案A          · 方案B
+                         │(存储最优)              (均衡之选)
+                         └─────────────────────────────────────▶ 配置报文大小 (字节)
+                            20   30   40   50   60   70   80
+
+                    ■ = Pareto最优解
+                    · = 被支配的解 (不选择)
+</code></pre></div>
+
+<hr />
+<h2 id="8">8. 区间构建算法</h2>
+<h3 id="81">8.1 从分割点构建区间</h3>
+<p>根据DP计算出的分割点，构建实际的Modbus区间。</p>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">buildRangesFromSplits</span><span class="p">(</span><span class="nx">splits</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">endIndex</span><span class="w"> </span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">addrList</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">prefixSum</span><span class="w"> </span><span class="p">[]</span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">variables</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="kd">var</span><span class="w"> </span><span class="nx">ranges</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span>
+
+<span class="w">    </span><span class="nx">prevSplit</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">split</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">splits</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">split</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="nx">prevSplit</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nx">rangeAddrs</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">addrList</span><span class="p">[</span><span class="nx">prevSplit</span><span class="p">:</span><span class="nx">split</span><span class="p">]</span>
+<span class="w">            </span><span class="nx">rangeLength</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">split</span><span class="p">]</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">prevSplit</span><span class="p">]</span>
+<span class="w">            </span><span class="nx">ranges</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">ranges</span><span class="p">,</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="p">{</span>
+<span class="w">                </span><span class="nx">SlaveAddr</span><span class="p">:</span><span class="w">  </span><span class="nx">variables</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">ModbusDevice</span><span class="p">,</span>
+<span class="w">                </span><span class="nx">ModbusType</span><span class="p">:</span><span class="w"> </span><span class="nx">parseModbusType</span><span class="p">(</span><span class="nx">variables</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">ModbusType</span><span class="p">),</span>
+<span class="w">                </span><span class="nx">StartAddr</span><span class="p">:</span><span class="w">  </span><span class="nx">rangeAddrs</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+<span class="w">                </span><span class="nx">Length</span><span class="p">:</span><span class="w">     </span><span class="nx">rangeLength</span><span class="p">,</span>
+<span class="w">                </span><span class="nx">VarCount</span><span class="p">:</span><span class="w">   </span><span class="nb">len</span><span class="p">(</span><span class="nx">rangeAddrs</span><span class="p">),</span>
+<span class="w">            </span><span class="p">})</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="nx">prevSplit</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">split</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">endIndex</span><span class="w"> </span><span class="p">&gt;</span><span class="w"> </span><span class="nx">prevSplit</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">rangeAddrs</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">addrList</span><span class="p">[</span><span class="nx">prevSplit</span><span class="p">:</span><span class="nx">endIndex</span><span class="p">]</span>
+<span class="w">        </span><span class="nx">rangeLength</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">endIndex</span><span class="p">]</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="nx">prefixSum</span><span class="p">[</span><span class="nx">prevSplit</span><span class="p">]</span>
+<span class="w">        </span><span class="nx">ranges</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nb">append</span><span class="p">(</span><span class="nx">ranges</span><span class="p">,</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="p">{</span>
+<span class="w">            </span><span class="nx">SlaveAddr</span><span class="p">:</span><span class="w">  </span><span class="nx">variables</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">ModbusDevice</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">ModbusType</span><span class="p">:</span><span class="w"> </span><span class="nx">parseModbusType</span><span class="p">(</span><span class="nx">variables</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="nx">ModbusType</span><span class="p">),</span>
+<span class="w">            </span><span class="nx">StartAddr</span><span class="p">:</span><span class="w">  </span><span class="nx">rangeAddrs</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span>
+<span class="w">            </span><span class="nx">Length</span><span class="p">:</span><span class="w">     </span><span class="nx">rangeLength</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">VarCount</span><span class="p">:</span><span class="w">   </span><span class="nb">len</span><span class="p">(</span><span class="nx">rangeAddrs</span><span class="p">),</span>
+<span class="w">        </span><span class="p">})</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">ranges</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="9">9. 核心计算函数</h2>
+<h3 id="91">9.1 数据字节数计算</h3>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateDataBytesForRange</span><span class="p">(</span><span class="nx">length</span><span class="w"> </span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">modbusType</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">switch</span><span class="w"> </span><span class="nx">modbusType</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeCoil</span><span class="p">,</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeDiscreteInput</span><span class="p">:</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="p">(</span><span class="nx">length</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="mi">7</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="mi">8</span><span class="w">   </span><span class="c1">// bit → byte</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeHoldingReg</span><span class="p">,</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeInputReg</span><span class="p">:</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">length</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span><span class="w">          </span><span class="c1">// word → byte</span>
+<span class="w">    </span><span class="k">default</span><span class="p">:</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">length</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="92-mqtt">9.2 MQTT报文计算</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// MQTT协议开销</span>
+<span class="kd">const</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="nx">MaxBytesPerMqttPacket</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">1024</span><span class="w">  </span><span class="c1">// ML307C模组MTU</span>
+<span class="w">    </span><span class="nx">MqttHeaderBytes</span><span class="w">       </span><span class="p">=</span><span class="w"> </span><span class="mi">3</span><span class="w">     </span><span class="c1">// MQTT头</span>
+<span class="w">    </span><span class="nx">MqttBodyMinBytes</span><span class="w">      </span><span class="p">=</span><span class="w"> </span><span class="mi">20</span><span class="w">    </span><span class="c1">// 最小body</span>
+<span class="w">    </span><span class="nx">ConfigBytesPerRange</span><span class="w">   </span><span class="p">=</span><span class="w"> </span><span class="mi">6</span><span class="w">     </span><span class="c1">// 每区间配置字节</span>
+<span class="p">)</span>
+
+<span class="c1">// 配置报文计算</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateConfigMessageBytes</span><span class="p">(</span><span class="nx">ranges</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">ranges</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nx">cfgPayloadBytes</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">ranges</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ConfigBytesPerRange</span>
+<span class="w">    </span><span class="nx">totalBytes</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">cfgPayloadBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MqttHeaderBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MqttBodyMinBytes</span>
+
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">totalBytes</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">totalBytes</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="p">((</span><span class="nx">totalBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span>
+<span class="p">}</span>
+
+<span class="c1">// 数据报文计算</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateDataMessageBytes</span><span class="p">(</span><span class="nx">ranges</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusRange</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nx">totalBytes</span><span class="w"> </span><span class="kt">int</span><span class="p">,</span><span class="w"> </span><span class="nx">packetCount</span><span class="w"> </span><span class="kt">int</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">ranges</span><span class="p">)</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nx">dataBytes</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">0</span>
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">r</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">ranges</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">dataBytes</span><span class="w"> </span><span class="o">+=</span><span class="w"> </span><span class="nx">o</span><span class="p">.</span><span class="nx">calculateDataCacheBytes</span><span class="p">(</span><span class="nx">r</span><span class="p">)</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nx">totalBytes</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="nx">dataBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MqttHeaderBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MqttBodyMinBytes</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">totalBytes</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">totalBytes</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nx">packetCount</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">(</span><span class="nx">totalBytes</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span><span class="w"> </span><span class="o">-</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="o">/</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">packetCount</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">MaxBytesPerMqttPacket</span><span class="p">,</span><span class="w"> </span><span class="nx">packetCount</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="93">9.3 变量长度解析</h3>
+<div class="codehilite"><pre><span></span><code><span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">o</span><span class="w"> </span><span class="o">*</span><span class="nx">ModbusRangeOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">calculateVariableLength</span><span class="p">(</span><span class="nx">v</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">length</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">v</span><span class="p">.</span><span class="nx">DataLen</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Sscanf</span><span class="p">(</span><span class="nx">v</span><span class="p">.</span><span class="nx">DataLen</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;%d&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">length</span><span class="p">)</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">length</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nx">length</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">length</span>
+<span class="p">}</span>
+
+<span class="kd">func</span><span class="w"> </span><span class="nx">parseModbusType</span><span class="p">(</span><span class="nx">mt</span><span class="w"> </span><span class="kt">string</span><span class="p">)</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">switch</span><span class="w"> </span><span class="nx">mt</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;1&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;coils&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Coil&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeCoil</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;2&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;discrete&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;DiscreteInput&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeDiscreteInput</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;3&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;holding&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;HoldingRegister&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeHoldingReg</span>
+<span class="w">    </span><span class="k">case</span><span class="w"> </span><span class="s">&quot;4&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;input&quot;</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;InputRegister&quot;</span><span class="p">:</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeInputReg</span>
+<span class="w">    </span><span class="k">default</span><span class="p">:</span>
+<span class="w">        </span><span class="nx">val</span><span class="p">,</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">strconv</span><span class="p">.</span><span class="nx">Atoi</span><span class="p">(</span><span class="nx">mt</span><span class="p">)</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">ModbusTypeHoldingReg</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nx">val</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="94">9.4 默认存储限额构建</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 构建默认存储限额</span>
+<span class="kd">func</span><span class="w"> </span><span class="nx">BuildDefaultStorageLimit</span><span class="p">()</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="p">{</span>
+<span class="w">        </span><span class="nx">MaxConfigBytes</span><span class="p">:</span><span class="w">     </span><span class="mi">256</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">MaxDataCacheBytes</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">MaxRangeCount</span><span class="p">:</span><span class="w">     </span><span class="mi">50</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">MaxMqttConfigCount</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="95-controller">9.5 限额解析（Controller层）</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 解析存储限额</span>
+<span class="kd">func</span><span class="w"> </span><span class="p">(</span><span class="nx">c</span><span class="w"> </span><span class="nx">cModbusOptimizer</span><span class="p">)</span><span class="w"> </span><span class="nx">resolveLimit</span><span class="p">(</span><span class="nx">preset</span><span class="w"> </span><span class="kt">string</span><span class="p">,</span><span class="w"> </span><span class="nx">customLimit</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="p">)</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">preset</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nx">preset</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">PresetNameCustom</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">customLimit</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="nx">customLimit</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">        </span><span class="nx">limit</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">logic</span><span class="p">.</span><span class="nx">BuildDefaultStorageLimit</span><span class="p">()</span>
+<span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">limit</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="nx">_</span><span class="p">,</span><span class="w"> </span><span class="nx">p</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="k">range</span><span class="w"> </span><span class="nx">model</span><span class="p">.</span><span class="nx">StoragePresets</span><span class="w"> </span><span class="p">{</span>
+<span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nx">p</span><span class="p">.</span><span class="nx">Name</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nx">preset</span><span class="w"> </span><span class="p">{</span>
+<span class="w">            </span><span class="nx">limit</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">p</span><span class="p">.</span><span class="nx">Limit</span>
+<span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">limit</span>
+<span class="w">        </span><span class="p">}</span>
+<span class="w">    </span><span class="p">}</span>
+
+<span class="w">    </span><span class="nx">limit</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">logic</span><span class="p">.</span><span class="nx">BuildDefaultStorageLimit</span><span class="p">()</span>
+<span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">limit</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="11_1">11. 存储限额预设</h2>
+<h3 id="111">11.1 三档预设方案</h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>预设</th>
+<th>典型MCU</th>
+<th>Config</th>
+<th>DataCache</th>
+<th>区间数</th>
+<th>MQTT</th>
+<th>预估变量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>low</strong></td>
+<td>STM8S (2KB RAM)</td>
+<td>128B</td>
+<td>512B</td>
+<td>20</td>
+<td>5</td>
+<td>~30</td>
+</tr>
+<tr>
+<td><strong>medium</strong></td>
+<td>STM32F103 (64KB RAM)</td>
+<td>512B</td>
+<td>4KB</td>
+<td>50</td>
+<td>10</td>
+<td>~150</td>
+</tr>
+<tr>
+<td><strong>high</strong></td>
+<td>STM32F4/ESP32 (256KB+)</td>
+<td>2KB</td>
+<td>16KB</td>
+<td>100</td>
+<td>20</td>
+<td>~500</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="112">11.2 存储限额数据结构</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 预设名称常量</span>
+<span class="kd">const</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="nx">PresetNameLow</span><span class="w">    </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;low&quot;</span>
+<span class="w">    </span><span class="nx">PresetNameMedium</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;medium&quot;</span>
+<span class="w">    </span><span class="nx">PresetNameHigh</span><span class="w">   </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;high&quot;</span>
+<span class="w">    </span><span class="nx">PresetNameCustom</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="s">&quot;custom&quot;</span>
+<span class="p">)</span>
+
+<span class="c1">// 存储限额</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">StorageLimit</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">MaxConfigBytes</span><span class="w">     </span><span class="kt">int</span><span class="w"> </span><span class="s">`json:&quot;maxConfigBytes&quot;`</span>
+<span class="w">    </span><span class="nx">MaxDataCacheBytes</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="s">`json:&quot;maxDataCacheBytes&quot;`</span>
+<span class="w">    </span><span class="nx">MaxRangeCount</span><span class="w">     </span><span class="kt">int</span><span class="w"> </span><span class="s">`json:&quot;maxRangeCount&quot;`</span>
+<span class="w">    </span><span class="nx">MaxMqttConfigCount</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="s">`json:&quot;maxMqttConfigCount&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// 存储预设</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">StoragePreset</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Name</span><span class="w">        </span><span class="kt">string</span><span class="w">       </span><span class="s">`json:&quot;name&quot;`</span>
+<span class="w">    </span><span class="nx">Description</span><span class="w"> </span><span class="kt">string</span><span class="w">       </span><span class="s">`json:&quot;description&quot;`</span>
+<span class="w">    </span><span class="nx">TypicalMCU</span><span class="w">  </span><span class="kt">string</span><span class="w">       </span><span class="s">`json:&quot;typicalMCU&quot;`</span>
+<span class="w">    </span><span class="nx">Limit</span><span class="w">       </span><span class="nx">StorageLimit</span><span class="w"> </span><span class="s">`json:&quot;limit&quot;`</span>
+<span class="w">    </span><span class="nx">MaxVars</span><span class="w">     </span><span class="kt">int</span><span class="w">          </span><span class="s">`json:&quot;maxVarsEstimate&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// 预设方案数组</span>
+<span class="kd">var</span><span class="w"> </span><span class="nx">StoragePresets</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="p">[]</span><span class="nx">StoragePreset</span><span class="p">{</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">Name</span><span class="p">:</span><span class="w">        </span><span class="nx">PresetNameLow</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">Description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;低配方案 - 适用于资源极度受限的MCU&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">TypicalMCU</span><span class="p">:</span><span class="w">  </span><span class="s">&quot;STM8S (2KB RAM), N76E003 (1KB RAM)&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">Limit</span><span class="p">:</span><span class="w"> </span><span class="nx">StorageLimit</span><span class="p">{</span>
+<span class="w">            </span><span class="nx">MaxConfigBytes</span><span class="p">:</span><span class="w">     </span><span class="mi">128</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxDataCacheBytes</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxRangeCount</span><span class="p">:</span><span class="w">     </span><span class="mi">20</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxMqttConfigCount</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nx">MaxVars</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">Name</span><span class="p">:</span><span class="w">        </span><span class="nx">PresetNameMedium</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">Description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;中等方案 - 适用于中等规模工业应用&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">TypicalMCU</span><span class="p">:</span><span class="w">  </span><span class="s">&quot;STM32F103 (64KB RAM), STM32F401 (64KB RAM)&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">Limit</span><span class="p">:</span><span class="w"> </span><span class="nx">StorageLimit</span><span class="p">{</span>
+<span class="w">            </span><span class="nx">MaxConfigBytes</span><span class="p">:</span><span class="w">     </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxDataCacheBytes</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxRangeCount</span><span class="p">:</span><span class="w">     </span><span class="mi">50</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxMqttConfigCount</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nx">MaxVars</span><span class="p">:</span><span class="w"> </span><span class="mi">150</span><span class="p">,</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">        </span><span class="nx">Name</span><span class="p">:</span><span class="w">        </span><span class="nx">PresetNameHigh</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">Description</span><span class="p">:</span><span class="w"> </span><span class="s">&quot;高配方案 - 适用于资源充裕的高端MCU&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">TypicalMCU</span><span class="p">:</span><span class="w">  </span><span class="s">&quot;STM32F4 (256KB RAM), ESP32 (520KB RAM)&quot;</span><span class="p">,</span>
+<span class="w">        </span><span class="nx">Limit</span><span class="p">:</span><span class="w"> </span><span class="nx">StorageLimit</span><span class="p">{</span>
+<span class="w">            </span><span class="nx">MaxConfigBytes</span><span class="p">:</span><span class="w">     </span><span class="mi">2048</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxDataCacheBytes</span><span class="p">:</span><span class="w"> </span><span class="mi">16384</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxRangeCount</span><span class="p">:</span><span class="w">     </span><span class="mi">100</span><span class="p">,</span>
+<span class="w">            </span><span class="nx">MaxMqttConfigCount</span><span class="p">:</span><span class="w"> </span><span class="mi">20</span><span class="p">,</span>
+<span class="w">        </span><span class="p">},</span>
+<span class="w">        </span><span class="nx">MaxVars</span><span class="p">:</span><span class="w"> </span><span class="mi">500</span><span class="p">,</span>
+<span class="w">    </span><span class="p">},</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="113">11.3 选择建议</h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>场景</th>
+<th>推荐预设</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>存储极度受限</td>
+<td>low</td>
+</tr>
+<tr>
+<td>中等规模工业应用</td>
+<td>medium (默认)</td>
+</tr>
+<tr>
+<td>资源充裕，高性能需求</td>
+<td>high</td>
+</tr>
+</tbody>
+</table></div>
+<hr />
+<h2 id="12_1">12. 数据结构完整定义</h2>
+<h3 id="121-internalmodelmodbus_rangego">12.1 核心类型定义 (internal/model/modbus_range.go)</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// ModbusRange - 优化后的区间</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusRange</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">SlaveAddr</span><span class="w">  </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;slaveAddr&quot;`</span>
+<span class="w">    </span><span class="nx">ModbusType</span><span class="w"> </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;modbusType&quot;`</span>
+<span class="w">    </span><span class="nx">StartAddr</span><span class="w">  </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;startAddr&quot;`</span>
+<span class="w">    </span><span class="nx">Length</span><span class="w">     </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;length&quot;`</span>
+<span class="w">    </span><span class="nx">VarCount</span><span class="w">   </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;varCount&quot;`</span>
+<span class="w">    </span><span class="nx">IsOptimal</span><span class="w">  </span><span class="kt">bool</span><span class="w">   </span><span class="s">`json:&quot;isOptimal&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// RangeOptimizationResult - 优化结果</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">RangeOptimizationResult</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Ranges</span><span class="w">           </span><span class="p">[]</span><span class="nx">ModbusRange</span><span class="w"> </span><span class="s">`json:&quot;ranges&quot;`</span>
+<span class="w">    </span><span class="nx">TotalVars</span><span class="w">        </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;totalVars&quot;`</span>
+<span class="w">    </span><span class="nx">TotalConfigBytes</span><span class="w"> </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;totalConfigBytes&quot;`</span>
+<span class="w">    </span><span class="nx">TotalDataCache</span><span class="w">   </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;totalDataCacheBytes&quot;`</span>
+<span class="w">    </span><span class="nx">MqttConfigCount</span><span class="w">  </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;mqttConfigCount&quot;`</span>
+<span class="w">    </span><span class="nx">MqttDataCount</span><span class="w">    </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;mqttDataCountEstimate&quot;`</span>
+<span class="w">    </span><span class="nx">IsWithinLimit</span><span class="w">    </span><span class="kt">bool</span><span class="w">          </span><span class="s">`json:&quot;isWithinLimit&quot;`</span>
+<span class="w">    </span><span class="nx">LimitReason</span><span class="w">      </span><span class="kt">string</span><span class="w">        </span><span class="s">`json:&quot;limitReason,omitempty&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ParetoSolution - Pareto最优解</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ParetoSolution</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Ranges</span><span class="w">              </span><span class="p">[]</span><span class="nx">ModbusRange</span><span class="w"> </span><span class="s">`json:&quot;ranges&quot;`</span>
+<span class="w">    </span><span class="nx">ConfigMessageBytes</span><span class="w"> </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;configMessageBytes&quot;`</span>
+<span class="w">    </span><span class="nx">DataMessageBytes</span><span class="w">   </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;dataMessageBytes&quot;`</span>
+<span class="w">    </span><span class="nx">TotalMessageBytes</span><span class="w">  </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;totalMessageBytes&quot;`</span>
+<span class="w">    </span><span class="nx">RangeCount</span><span class="w">         </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;rangeCount&quot;`</span>
+<span class="w">    </span><span class="nx">DataPacketCount</span><span class="w">    </span><span class="kt">int</span><span class="w">           </span><span class="s">`json:&quot;dataPacketCount&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ParetoResult - Pareto解集结果</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ParetoResult</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Solutions</span><span class="w">    </span><span class="p">[]</span><span class="nx">ParetoSolution</span><span class="w"> </span><span class="s">`json:&quot;solutions&quot;`</span>
+<span class="w">    </span><span class="nx">BestByStorage</span><span class="w"> </span><span class="o">*</span><span class="nx">ParetoSolution</span><span class="w"> </span><span class="s">`json:&quot;bestByStorage&quot;`</span>
+<span class="w">    </span><span class="nx">BestByMqtt</span><span class="w">    </span><span class="o">*</span><span class="nx">ParetoSolution</span><span class="w"> </span><span class="s">`json:&quot;bestByMqtt&quot;`</span>
+<span class="w">    </span><span class="nx">BestByTotal</span><span class="w">   </span><span class="o">*</span><span class="nx">ParetoSolution</span><span class="w"> </span><span class="s">`json:&quot;bestByTotal&quot;`</span>
+<span class="w">    </span><span class="nx">StorageLimit</span><span class="w"> </span><span class="nx">StorageLimit</span><span class="w">    </span><span class="s">`json:&quot;storageLimit&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// OptimizedConfig - 优化配置</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">OptimizedConfig</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Ranges</span><span class="w">        </span><span class="p">[]</span><span class="nx">ModbusRange</span><span class="w">              </span><span class="s">`json:&quot;ranges&quot;`</span>
+<span class="w">    </span><span class="nx">DataCacheMap</span><span class="w">  </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="nx">DataCacheEntry</span><span class="w"> </span><span class="s">`json:&quot;dataCacheMap&quot;`</span>
+<span class="w">    </span><span class="nx">RangeIndexMap</span><span class="w"> </span><span class="kd">map</span><span class="p">[</span><span class="kt">string</span><span class="p">]</span><span class="kt">int</span><span class="w">            </span><span class="s">`json:&quot;rangeIndexMap&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// DataCacheEntry - 数据缓存条目</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">DataCacheEntry</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">SlaveAddr</span><span class="w">  </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;slaveAddr&quot;`</span>
+<span class="w">    </span><span class="nx">ModbusType</span><span class="w"> </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;modbusType&quot;`</span>
+<span class="w">    </span><span class="nx">StartAddr</span><span class="w">  </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;startAddr&quot;`</span>
+<span class="w">    </span><span class="nx">Length</span><span class="w">     </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;length&quot;`</span>
+<span class="w">    </span><span class="nx">ByteOffset</span><span class="w"> </span><span class="kt">int</span><span class="w">    </span><span class="s">`json:&quot;byteOffset&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// 常量定义</span>
+<span class="kd">const</span><span class="w"> </span><span class="p">(</span>
+<span class="w">    </span><span class="nx">ModbusTypeCoil</span><span class="w">         </span><span class="p">=</span><span class="w"> </span><span class="mi">1</span>
+<span class="w">    </span><span class="nx">ModbusTypeDiscreteInput</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">2</span>
+<span class="w">    </span><span class="nx">ModbusTypeHoldingReg</span><span class="w">   </span><span class="p">=</span><span class="w"> </span><span class="mi">3</span>
+<span class="w">    </span><span class="nx">ModbusTypeInputReg</span><span class="w">     </span><span class="p">=</span><span class="w"> </span><span class="mi">4</span>
+
+<span class="w">    </span><span class="nx">MaxBytesPerMqttPacket</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">1024</span>
+<span class="w">    </span><span class="nx">ConfigBytesPerRange</span><span class="w">   </span><span class="p">=</span><span class="w"> </span><span class="mi">6</span>
+
+<span class="w">    </span><span class="nx">MqttHeaderBytes</span><span class="w">  </span><span class="p">=</span><span class="w"> </span><span class="mi">3</span>
+<span class="w">    </span><span class="nx">MqttBodyMinBytes</span><span class="w"> </span><span class="p">=</span><span class="w"> </span><span class="mi">20</span>
+<span class="p">)</span>
+</code></pre></div>
+
+<hr />
+<h2 id="13-api">13. API接口完整说明</h2>
+<h3 id="131">13.1 接口列表</h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>接口</th>
+<th>方法</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>/modbus/optimize</code></td>
+<td>POST</td>
+<td>获取单一最优解</td>
+</tr>
+<tr>
+<td><code>/modbus/build-config</code></td>
+<td>POST</td>
+<td>构建优化配置</td>
+</tr>
+<tr>
+<td><code>/modbus/pareto</code></td>
+<td>POST</td>
+<td>获取Pareto解集</td>
+</tr>
+<tr>
+<td><code>/modbus/get-presets</code></td>
+<td>GET</td>
+<td>获取所有预设方案</td>
+</tr>
+<tr>
+<td><code>/modbus/get-limit</code></td>
+<td>GET</td>
+<td>获取指定预设的限额</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="132">13.2 请求结构完整定义</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// ModbusOptimizerReq - 优化请求</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusOptimizerReq</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">DevID</span><span class="w"> </span><span class="kt">int</span><span class="w">                  </span><span class="s">`json:&quot;devId&quot; dc:&quot;设备ID&quot;`</span>
+<span class="w">    </span><span class="nx">Preset</span><span class="w"> </span><span class="kt">string</span><span class="w">              </span><span class="s">`json:&quot;preset&quot; dc:&quot;预设名称(low/medium/high/custom)&quot;`</span>
+<span class="w">    </span><span class="nx">Limit</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="w">  </span><span class="s">`json:&quot;limit&quot; dc:&quot;存储限额约束(preset为custom时使用)&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ModbusBuildConfigReq - 构建配置请求</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusBuildConfigReq</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">DevID</span><span class="w"> </span><span class="kt">int</span><span class="w">                  </span><span class="s">`json:&quot;devId&quot; dc:&quot;设备ID&quot;`</span>
+<span class="w">    </span><span class="nx">Preset</span><span class="w"> </span><span class="kt">string</span><span class="w">              </span><span class="s">`json:&quot;preset&quot; dc:&quot;预设名称(low/medium/high/custom)&quot;`</span>
+<span class="w">    </span><span class="nx">Limit</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="w">  </span><span class="s">`json:&quot;limit&quot; dc:&quot;存储限额约束(preset为custom时使用)&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ModbusGetLimitReq - 获取限额请求</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusGetLimitReq</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Preset</span><span class="w"> </span><span class="kt">string</span><span class="w"> </span><span class="s">`json:&quot;preset&quot; dc:&quot;预设名称&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ModbusParetoReq - Pareto解集请求</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusParetoReq</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">DevID</span><span class="w"> </span><span class="kt">int</span><span class="w">                  </span><span class="s">`json:&quot;devId&quot; dc:&quot;设备ID&quot;`</span>
+<span class="w">    </span><span class="nx">Preset</span><span class="w"> </span><span class="kt">string</span><span class="w">              </span><span class="s">`json:&quot;preset&quot; dc:&quot;预设名称(low/medium/high/custom)&quot;`</span>
+<span class="w">    </span><span class="nx">Limit</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="w">  </span><span class="s">`json:&quot;limit&quot; dc:&quot;存储限额约束(preset为custom时使用)&quot;`</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="133">13.3 响应结构完整定义</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// ModbusOptimizerRes - 优化响应</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusOptimizerRes</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Result</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">RangeOptimizationResult</span><span class="w"> </span><span class="s">`json:&quot;result&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ModbusBuildConfigRes - 构建配置响应</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusBuildConfigRes</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Config</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">OptimizedConfig</span><span class="w"> </span><span class="s">`json:&quot;config&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ModbusGetPresetsRes - 获取预设响应</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusGetPresetsRes</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Presets</span><span class="w"> </span><span class="p">[]</span><span class="nx">model</span><span class="p">.</span><span class="nx">StoragePreset</span><span class="w"> </span><span class="s">`json:&quot;presets&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ModbusGetLimitRes - 获取限额响应</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusGetLimitRes</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">Preset</span><span class="w"> </span><span class="kt">string</span><span class="w">             </span><span class="s">`json:&quot;preset&quot;`</span>
+<span class="w">    </span><span class="nx">Limit</span><span class="w">  </span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="w"> </span><span class="s">`json:&quot;limit&quot;`</span>
+<span class="p">}</span>
+
+<span class="c1">// ModbusParetoRes - Pareto解集响应</span>
+<span class="kd">type</span><span class="w"> </span><span class="nx">ModbusParetoRes</span><span class="w"> </span><span class="kd">struct</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">ParetoResult</span><span class="w"> </span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">ParetoResult</span><span class="w"> </span><span class="s">`json:&quot;paretoResult&quot;`</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="134-internalcmdcmdgo">13.4 路由注册 (internal/cmd/cmd.go)</h3>
+<div class="codehilite"><pre><span></span><code><span class="nx">group</span><span class="p">.</span><span class="nx">Bind</span><span class="p">(</span><span class="nx">controller</span><span class="p">.</span><span class="nx">ModbusOptimizer</span><span class="p">.</span><span class="nx">Optimize</span><span class="p">)</span>
+<span class="nx">group</span><span class="p">.</span><span class="nx">Bind</span><span class="p">(</span><span class="nx">controller</span><span class="p">.</span><span class="nx">ModbusOptimizer</span><span class="p">.</span><span class="nx">BuildConfig</span><span class="p">)</span>
+<span class="nx">group</span><span class="p">.</span><span class="nx">Bind</span><span class="p">(</span><span class="nx">controller</span><span class="p">.</span><span class="nx">ModbusOptimizer</span><span class="p">.</span><span class="nx">GetLimit</span><span class="p">)</span>
+<span class="nx">group</span><span class="p">.</span><span class="nx">Bind</span><span class="p">(</span><span class="nx">controller</span><span class="p">.</span><span class="nx">ModbusOptimizer</span><span class="p">.</span><span class="nx">GetPresets</span><span class="p">)</span>
+<span class="nx">group</span><span class="p">.</span><span class="nx">Bind</span><span class="p">(</span><span class="nx">controller</span><span class="p">.</span><span class="nx">ModbusOptimizer</span><span class="p">.</span><span class="nx">GetParetoSolutions</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="135">13.5 请求示例</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 使用预设</span>
+<span class="err">POST</span><span class="w"> </span><span class="err">/modbus/pare</span><span class="kc">t</span><span class="err">o</span>
+<span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;devId&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;preset&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;medium&quot;</span>
+<span class="p">}</span>
+
+<span class="c1">// 自定义限额</span>
+<span class="err">POST</span><span class="w"> </span><span class="err">/modbus/pare</span><span class="kc">t</span><span class="err">o</span>
+<span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;devId&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">123</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;preset&quot;</span><span class="p">:</span><span class="w"> </span><span class="s2">&quot;custom&quot;</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">&quot;limit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;maxConfigBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">256</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;maxDataCacheBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2048</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;maxRangeCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">30</span><span class="p">,</span>
+<span class="w">    </span><span class="nt">&quot;maxMqttConfigCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">8</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="136">13.6 响应示例</h3>
+<div class="codehilite"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">&quot;paretoResult&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nt">&quot;solutions&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;rangeCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;configMessageBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">29</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;dataMessageBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">49</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;totalMessageBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">78</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;dataPacketCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;ranges&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">          </span><span class="p">{</span><span class="nt">&quot;slaveAddr&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;modbusType&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;startAddr&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;length&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">13</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;varCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">6</span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">      </span><span class="p">},</span>
+<span class="w">      </span><span class="p">{</span>
+<span class="w">        </span><span class="nt">&quot;rangeCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;configMessageBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">35</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;dataMessageBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">35</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;totalMessageBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">70</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;dataPacketCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">        </span><span class="nt">&quot;ranges&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">          </span><span class="p">{</span><span class="nt">&quot;slaveAddr&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;modbusType&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;startAddr&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;length&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;varCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">},</span>
+<span class="w">          </span><span class="p">{</span><span class="nt">&quot;slaveAddr&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;modbusType&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;startAddr&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;length&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="nt">&quot;varCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">3</span><span class="p">}</span>
+<span class="w">        </span><span class="p">]</span>
+<span class="w">      </span><span class="p">}</span>
+<span class="w">    </span><span class="p">],</span>
+<span class="w">    </span><span class="nt">&quot;bestByStorage&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;bestByMqtt&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;bestByTotal&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="err">...</span><span class="p">},</span>
+<span class="w">    </span><span class="nt">&quot;storageLimit&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">&quot;maxConfigBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;maxDataCacheBytes&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4096</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;maxRangeCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">50</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">&quot;maxMqttConfigCount&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">10</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<hr />
+<h2 id="14_1">14. 使用示例</h2>
+<h3 id="141">14.1 基本使用：获取单一最优解</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 假设已有变量列表</span>
+<span class="nx">variables</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="p">[]</span><span class="o">*</span><span class="nx">model</span><span class="p">.</span><span class="nx">Variables</span><span class="p">{</span><span class="o">...</span><span class="p">}</span>
+
+<span class="c1">// 使用默认限额</span>
+<span class="nx">result</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">logic</span><span class="p">.</span><span class="nx">OptimizeModbusVariables</span><span class="p">(</span><span class="nx">variables</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&quot;变量数: %d, 区间数: %d\n&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">result</span><span class="p">.</span><span class="nx">TotalVars</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">result</span><span class="p">.</span><span class="nx">Ranges</span><span class="p">))</span>
+<span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&quot;配置字节: %d, 数据缓存: %d\n&quot;</span><span class="p">,</span><span class="w"> </span><span class="nx">result</span><span class="p">.</span><span class="nx">TotalConfigBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">result</span><span class="p">.</span><span class="nx">TotalDataCache</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="142">14.2 使用预设方案</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 使用low预设</span>
+<span class="nx">limit</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="o">&amp;</span><span class="nx">model</span><span class="p">.</span><span class="nx">StorageLimit</span><span class="p">{</span>
+<span class="w">    </span><span class="nx">MaxConfigBytes</span><span class="p">:</span><span class="w">     </span><span class="mi">128</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">MaxDataCacheBytes</span><span class="p">:</span><span class="w"> </span><span class="mi">512</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">MaxRangeCount</span><span class="p">:</span><span class="w">     </span><span class="mi">20</span><span class="p">,</span>
+<span class="w">    </span><span class="nx">MaxMqttConfigCount</span><span class="p">:</span><span class="w"> </span><span class="mi">5</span><span class="p">,</span>
+<span class="p">}</span>
+<span class="nx">result</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">logic</span><span class="p">.</span><span class="nx">OptimizeModbusVariables</span><span class="p">(</span><span class="nx">variables</span><span class="p">,</span><span class="w"> </span><span class="nx">limit</span><span class="p">)</span>
+</code></pre></div>
+
+<h3 id="143-pareto">14.3 获取Pareto解集</h3>
+<div class="codehilite"><pre><span></span><code><span class="c1">// 获取所有权衡方案</span>
+<span class="nx">paretoResult</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">logic</span><span class="p">.</span><span class="nx">GetModbusParetoSolutions</span><span class="p">(</span><span class="nx">variables</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span>
+
+<span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&quot;找到 %d 个Pareto最优解\n&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">paretoResult</span><span class="p">.</span><span class="nx">Solutions</span><span class="p">))</span>
+
+<span class="c1">// 选择存储最优的</span>
+<span class="nx">bestStorage</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">paretoResult</span><span class="p">.</span><span class="nx">BestByStorage</span>
+<span class="k">if</span><span class="w"> </span><span class="nx">bestStorage</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&quot;存储最优: 配置字节 %d, 数据报文 %d\n&quot;</span><span class="p">,</span><span class="w"> </span>
+<span class="w">        </span><span class="nx">bestStorage</span><span class="p">.</span><span class="nx">ConfigMessageBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">bestStorage</span><span class="p">.</span><span class="nx">DataPacketCount</span><span class="p">)</span>
+<span class="p">}</span>
+
+<span class="c1">// 选择通信最优的</span>
+<span class="nx">bestMqtt</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">paretoResult</span><span class="p">.</span><span class="nx">BestByMqtt</span>
+<span class="k">if</span><span class="w"> </span><span class="nx">bestMqtt</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
+<span class="w">    </span><span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&quot;通信最优: 配置字节 %d, 数据报文 %d\n&quot;</span><span class="p">,</span><span class="w"> </span>
+<span class="w">        </span><span class="nx">bestMqtt</span><span class="p">.</span><span class="nx">ConfigMessageBytes</span><span class="p">,</span><span class="w"> </span><span class="nx">bestMqtt</span><span class="p">.</span><span class="nx">DataPacketCount</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div>
+
+<h3 id="144">14.4 构建优化配置</h3>
+<div class="codehilite"><pre><span></span><code><span class="nx">config</span><span class="w"> </span><span class="o">:=</span><span class="w"> </span><span class="nx">logic</span><span class="p">.</span><span class="nx">BuildModbusOptimizedConfig</span><span class="p">(</span><span class="nx">variables</span><span class="p">,</span><span class="w"> </span><span class="kc">nil</span><span class="p">)</span>
+
+<span class="c1">// 配置包含区间信息和数据缓存映射</span>
+<span class="nx">fmt</span><span class="p">.</span><span class="nx">Printf</span><span class="p">(</span><span class="s">&quot;构建了 %d 个优化区间\n&quot;</span><span class="p">,</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">config</span><span class="p">.</span><span class="nx">Ranges</span><span class="p">))</span>
+</code></pre></div>
+
+<hr />
+<h2 id="15">15. 算法流程详解</h2>
+<h3 id="151">15.1 整体架构</h3>
+<div class="codehilite"><pre><span></span><code>输入: N个变量 + 存储限额
+  │
+  ▼
+┌─────────────────────────────────────────────┐
+│ Step 1: 分组解耦 (groupBySlaveAndType)       │
+│ 按 (从站地址, 寄存器类型) 分组               │
+│ {从站1_Type3} {从站1_Type4} {从站2_Type3}   │
+└─────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────┐
+│ Step 2: 预处理 (排序, 连续检测)              │
+│ 每组内按地址排序，检测是否连续               │
+└─────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────┐
+│ Step 3: 动态规划DP计算 (computeParetoForGroup)│
+│ 对每个分组独立计算最优解                     │
+└─────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────┐
+│ Step 4: Pareto筛选 (isParetoOptimal)        │
+│ 对每个分组的解进行Pareto筛选                 │
+└─────────────────────────────────────────────┘
+  │
+  ▼
+┌─────────────────────────────────────────────┐
+│ Step 5: 合并所有分组的结果                  │
+│ 合并并排序所有解，选择最优                   │
+└─────────────────────────────────────────────┘
+  │
+  ▼
+输出: ParetoResult / RangeOptimizationResult
+</code></pre></div>
+
+<h3 id="152-dp">15.2 单组DP计算流程</h3>
+<div class="codehilite"><pre><span></span><code><span class="n">组内变量</span>
+<span class="w">  </span><span class="err">│</span>
+<span class="w">  </span><span class="err">▼</span>
+<span class="n">排序地址</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">检查连续</span><span class="vm">?</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">是</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">直接合并为一个区间</span>
+<span class="w">  </span><span class="err">│</span><span class="w"> </span><span class="n">否</span>
+<span class="w">  </span><span class="err">▼</span>
+<span class="n">计算前缀和</span>
+<span class="w">  </span><span class="err">│</span>
+<span class="w">  </span><span class="err">▼</span>
+<span class="n">初始化DP表</span><span class="w"> </span><span class="n">dp</span><span class="o">[</span><span class="n">i</span><span class="o">][</span><span class="n">k</span><span class="o">]</span>
+<span class="w">  </span><span class="err">│</span>
+<span class="w">  </span><span class="err">▼</span>
+<span class="n">循环</span><span class="w"> </span><span class="n">i</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="n">到</span><span class="w"> </span><span class="n">n</span><span class="w"> </span><span class="p">(</span><span class="n">变量数</span><span class="p">)</span>
+<span class="w">  </span><span class="err">│</span>
+<span class="w">  </span><span class="err">├─</span><span class="w"> </span><span class="n">循环</span><span class="w"> </span><span class="n">k</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="n">到</span><span class="w"> </span><span class="n">maxRanges</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">│</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">├─</span><span class="w"> </span><span class="n">循环</span><span class="w"> </span><span class="n">j</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">k</span><span class="o">-</span><span class="mi">1</span><span class="w"> </span><span class="n">到</span><span class="w"> </span><span class="n">i</span><span class="o">-</span><span class="mi">1</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">│</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├─</span><span class="w"> </span><span class="n">获取</span><span class="w"> </span><span class="n">dp</span><span class="o">[</span><span class="n">j</span><span class="o">][</span><span class="n">k-1</span><span class="o">]</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├─</span><span class="w"> </span><span class="n">计算</span><span class="w"> </span><span class="n">j到i</span><span class="w"> </span><span class="n">的开销</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">├─</span><span class="w"> </span><span class="n">更新最优解</span>
+<span class="w">  </span><span class="err">│</span><span class="w">   </span><span class="err">│</span>
+<span class="w">  </span><span class="err">│</span>
+<span class="w">  </span><span class="err">▼</span>
+<span class="n">构建每个k的解</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">Pareto筛选</span><span class="w"> </span><span class="err">→</span><span class="w"> </span><span class="n">返回解集</span>
+</code></pre></div>
+
+<hr />
+<h2 id="16">16. 文件结构</h2>
+<div class="codehilite"><pre><span></span><code><span class="n">dev</span><span class="w"> </span><span class="n">_back_end</span><span class="o">/</span><span class="n">dev</span><span class="o">/</span>
+<span class="err">├──</span><span class="w"> </span><span class="n">internal</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">model</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">modbus_range</span><span class="p">.</span><span class="k">go</span><span class="w">          </span><span class="err">#</span><span class="w"> </span><span class="n">数据模型定义</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">logic</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">modbus_range_optimizer</span><span class="p">.</span><span class="k">go</span><span class="w"> </span><span class="err">#</span><span class="w"> </span><span class="n">核心算法实现</span>
+<span class="err">│</span><span class="w">   </span><span class="err">├──</span><span class="w"> </span><span class="n">controller</span><span class="o">/</span>
+<span class="err">│</span><span class="w">   </span><span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">modbus_optimizer</span><span class="p">.</span><span class="k">go</span><span class="w">       </span><span class="err">#</span><span class="w"> </span><span class="n">API控制器</span>
+<span class="err">│</span><span class="w">   </span><span class="err">└──</span><span class="w"> </span><span class="n">cmd</span><span class="o">/</span>
+<span class="err">│</span><span class="w">       </span><span class="err">└──</span><span class="w"> </span><span class="n">cmd</span><span class="p">.</span><span class="k">go</span><span class="w">                    </span><span class="err">#</span><span class="w"> </span><span class="n">路由注册</span>
+</code></pre></div>
+
+<hr />
+<h2 id="17">17. 总结</h2>
+<p>这是<strong>工业Modbus采集场景中，基于动态规划和Pareto优化的完整解决方案</strong>。</p>
+<h3 id="171">17.1 核心优化点</h3>
+<div class="table-wrapper"><table>
+<thead>
+<tr>
+<th>优化层</th>
+<th>方法</th>
+<th>收益</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>问题分解</td>
+<td>分组解耦</td>
+<td>将复杂问题拆分为独立子问题</td>
+</tr>
+<tr>
+<td>核心算法</td>
+<td>动态规划DP</td>
+<td>找到全局最优解</td>
+</tr>
+<tr>
+<td>多目标优化</td>
+<td>Pareto筛选</td>
+<td>提供存储/通信权衡选择</td>
+</tr>
+<tr>
+<td>性能优化</td>
+<td>分割开销缓存</td>
+<td>避免重复计算</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="172">17.2 最优性保证</h3>
+<ul>
+<li>✅ 100%找到全局最优解，无丢失</li>
+<li>✅ 无近似、无启发式妥协</li>
+<li>✅ 完整保留Pareto前沿</li>
+</ul>
+<h3 id="173">17.3 适用场景</h3>
+<ul>
+<li><strong>中等规模变量</strong>（n=100+）</li>
+<li><strong>多从站分组</strong>（10+从机）</li>
+<li><strong>存储受限</strong>（嵌入式MCU）</li>
+<li><strong>需要灵活权衡</strong>（存储 vs 通信）</li>
+</ul>
+        </div>
+        <div class="footer">
+            <p>📝 文档优化完成 | v3.0 | 2026</p>
+        </div>
+    </main>
+    <button class="back-to-top" id="backToTop" onclick="scrollToTop()">
+        ↑
+    </button>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: "default",
+            securityLevel: "loose"
+        });
+    </script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            if (typeof renderMathInElement !== "undefined") {
+                renderMathInElement(document.body, {
+                    delimiters: [
+                        {left: "$$", right: "$$", display: true},
+                        {left: "$", right: "$", display: false}
+                    ]
+                });
+            }
+        });
+    </script>
+    <script>
+
+document.addEventListener('DOMContentLoaded', function() {
+    initTheme();
+    initScrollProgress();
+    initBackToTop();
+    initNavigationHighlight();
+    initSidebarToggle();
+    initNavLinkClick();
+    initCodeCopy();
+});
+
+function initTheme() {
+    const savedTheme = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = savedTheme || (prefersDark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+    updateThemeButton(theme);
+    
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+        themeToggle.addEventListener('click', toggleTheme);
+    }
+}
+
+function toggleTheme() {
+    const html = document.documentElement;
+    const currentTheme = html.getAttribute('data-theme');
+    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', newTheme);
+    localStorage.setItem('theme', newTheme);
+    updateThemeButton(newTheme);
+}
+
+function updateThemeButton(theme) {
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) {
+        themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙';
+        themeToggle.setAttribute('aria-label', theme === 'dark' ? '切换到浅色模式' : '切换到深色模式');
+    }
+}
+
+function initScrollProgress() {
+    window.addEventListener('scroll', function() {
+        const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+        const height = document.documentElement.scrollHeight - document.documentElement.clientHeight;
+        const scrolled = (winScroll / height) * 100;
+        const progressBar = document.getElementById('progressBar');
+        if (progressBar) {
+            progressBar.style.width = scrolled + '%';
+        }
+    });
+}
+
+function initBackToTop() {
+    window.addEventListener('scroll', function() {
+        const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+        const backToTop = document.getElementById('backToTop');
+        if (backToTop) {
+            if (winScroll > 300) {
+                backToTop.classList.add('visible');
+            } else {
+                backToTop.classList.remove('visible');
+            }
+        }
+    });
+}
+
+function initNavigationHighlight() {
+    window.addEventListener('scroll', function() {
+        const winScroll = document.body.scrollTop || document.documentElement.scrollTop;
+        const sections = document.querySelectorAll('h2[id], h3[id]');
+        const navLinks = document.querySelectorAll('.nav-link');
+        let current = '';
+        
+        sections.forEach(function(section) {
+            const sectionTop = section.offsetTop - 100;
+            if (winScroll >= sectionTop) {
+                current = section.getAttribute('id');
+            }
+        });
+        
+        navLinks.forEach(function(link) {
+            link.classList.remove('active');
+            if (link.getAttribute('href') === '#' + current) {
+                link.classList.add('active');
+            }
+        });
+    });
+}
+
+function initSidebarToggle() {
+    const menuToggle = document.getElementById('menuToggle');
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('overlay');
+    
+    if (menuToggle) {
+        menuToggle.addEventListener('click', toggleMenu);
+    }
+    
+    if (overlay) {
+        overlay.addEventListener('click', toggleMenu);
+    }
+}
+
+function toggleMenu() {
+    const sidebar = document.getElementById('sidebar');
+    const overlay = document.getElementById('overlay');
+    
+    if (sidebar) {
+        sidebar.classList.toggle('open');
+    }
+    
+    if (overlay) {
+        overlay.classList.toggle('active');
+    }
+}
+
+function initNavLinkClick() {
+    document.querySelectorAll('.nav-link').forEach(function(link) {
+        link.addEventListener('click', function() {
+            if (window.innerWidth <= 1024) {
+                toggleMenu();
+            }
+        });
+    });
+}
+
+function scrollToTop() {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function initCodeCopy() {
+    document.querySelectorAll('pre').forEach(function(pre, index) {
+        const button = document.createElement('button');
+        button.className = 'copy-btn';
+        button.textContent = '复制';
+        button.setAttribute('aria-label', '复制代码');
+        
+        pre.style.position = 'relative';
+        pre.appendChild(button);
+        
+        button.addEventListener('click', async function() {
+            const code = pre.querySelector('code');
+            try {
+                await navigator.clipboard.writeText(code ? code.textContent : pre.textContent);
+                button.textContent = '✓ 已复制';
+                button.classList.add('copied');
+                setTimeout(function() {
+                    button.textContent = '复制';
+                    button.classList.remove('copied');
+                }, 2000);
+            } catch (err) {
+                button.textContent = '✗ 复制失败';
+                setTimeout(function() {
+                    button.textContent = '复制';
+                }, 2000);
+            }
+        });
+    });
+}
+
+    </script>
+</body>
+</html>
