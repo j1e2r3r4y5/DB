@@ -1,0 +1,74 @@
+# 忽略备份文件夹
+src_*/
+src_*-副本/
+zq/
+开题/
+毕设材料模板/
+fastbee-master/
+hummingbird-master/
+ML307C_*/
+
+# 忽略压缩包
+*.zip
+*.rar
+*.7z
+
+# 忽略文档文件
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+*.vsdx
+*.xls
+*.xlsx
+
+# 忽略临时文件
+~$*
+*.tmp
+*.pyc
+__pycache__/
+
+# 忽略日志文件
+*.log
+
+# 忽略编译产物
+*.exe
+*.dll
+*.so
+*.dylib
+
+# 忽略 node_modules
+node_modules/
+
+# 忽略构建产物
+dist/
+build/
+
+# 忽略 IDE 配置
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 忽略数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 忽略系统文件
+.DS_Store
+Thumbs.db
+
+# 忽略根目录的文档文件（保留项目核心代码）
+*.md
+*.txt
+!src_5-2/**/*.md
+!src_5-2/**/*.txt
+agreement.md
+doc_.md
+old_config.yaml
+
+# 保留主项目
+!src_5-2/
