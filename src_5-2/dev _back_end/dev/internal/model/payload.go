@@ -12,14 +12,6 @@ type DevUpdateItem struct {
 	Baud         string      `json:"baud" `      //波特率
 	Success      string      `json:"success"`    // 是否成功
 }
-type DataItem struct {
-	DevSerial  string `json:"devSerial"`
-	SlaveAddr  int    `json:"slaveAddr"`
-	ModbusType int    `json:"dataType"`
-	DataAddr   int    `json:"dataAddr"`
-	DataLeng   int    `json:"dataLeng"`
-	DataValue  string `json:"dataValue"`
-}
 
 type SemanticDataItem struct {
 	DevSerial   string      `json:"devSerial"`

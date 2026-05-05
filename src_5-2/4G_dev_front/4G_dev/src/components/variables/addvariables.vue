@@ -12,22 +12,15 @@
             </el-form-item>
             <el-form-item label="数据类型">
                 <el-select v-model="form.dataType" placeholder="请选择数据类型" style="width:300px">
-                    <el-option label="整数" value="1" />
-                    <el-option label="浮点数" value="2" />
-                    <el-option label="定点数" value="3" />
-                    <el-option label="字符串" value="4" />
+                    <el-option v-for="opt in DataTypeOptions" :key="opt.value" :label="opt.label"
+                        :value="opt.value" />
                 </el-select>
             </el-form-item>
             <el-form-item label="数据分区">
                 <el-select v-model="form.modbusType" placeholder="请选择数据分区" style="width:300px;">
-                    <!-- 标准 Modbus 协议分区定义 -->
-                    <!-- 0区: 线圈 (Coils) - 功能码 0x01/0x05, 读写, 位类型 -->
-                    <el-option label="0区 线圈 (Coils)" value="1" />
-                    <!-- 1区: 离散输入 (Discrete Inputs) - 功能码 0x02, 只读, 位类型 -->
-                    <el-option label="1区 离散输入 (Discrete Inputs)" value="2" />
-                    <!-- 3区: 输入寄存器 (Input Registers) - 功能码 0x04, 只读, 16位字 -->
+                    <el-option label="0区 线圈 (Coils)" value="0" />
+                    <el-option label="1区 离散输入 (Discrete Inputs)" value="1" />
                     <el-option label="3区 输入寄存器 (Input Registers)" value="3" />
-                    <!-- 4区: 保持寄存器 (Holding Registers) - 功能码 0x03/0x06, 读写, 16位字 -->
                     <el-option label="4区 保持寄存器 (Holding Registers)" value="4" />
                 </el-select>
             </el-form-item>
@@ -37,13 +30,19 @@
             <el-form-item label="数据地址">
                 <el-input v-model="form.modbusAddr" style="width:300px" />
             </el-form-item>
+            <el-form-item label="寄存器数量">
+                <el-input v-model="form.data_len" type="number" style="width:300px"
+                    :disabled="true"
+                    :placeholder="`自动计算: ${autoRegisterNum}`" />
+            </el-form-item>
             <el-form-item label="字符串长度">
-                <el-input v-model="form.stringLen" style="width:300px" :disabled="form.dataType !== '4'"
+                <el-input v-model="form.stringLen" type="number" style="width:300px"
+                    :disabled="!isStringType(form.dataType)"
                     placeholder="仅字符串类型可填" />
             </el-form-item>
             <el-form-item label="小数位数">
-                <el-input v-model="form.decimalDigits" style="width:300px" :disabled="form.dataType !== '3'"
-                    placeholder="仅定点数可填" />
+                <el-input v-model="form.decimalDigits" style="width:300px" :disabled="true"
+                    placeholder="已移除，无需填写" />
             </el-form-item>
 
         </el-form>
@@ -55,8 +54,9 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, computed } from 'vue'
 import api from '../../api'
+import { DataTypeOptions, calculateRegisterNum, isStringType } from '../../utils/datatype'
 const deviceOptions = ref([])
 const props = defineProps({
     modelValue: Boolean,
@@ -78,6 +78,21 @@ const form = ref({
     data_len: '',
     stringLen: '',
     decimalDigits: ''
+})
+
+// 自动计算寄存器数量
+const autoRegisterNum = computed(() => {
+    if (!form.value.dataType) return '-'
+    const stringLen = parseInt(form.value.stringLen) || 0
+    return calculateRegisterNum(form.value.dataType, stringLen)
+})
+
+// 监听数据类型和字符串长度变化，自动设置data_len
+watch([() => form.value.dataType, () => form.value.stringLen], () => {
+    const registerNum = autoRegisterNum.value
+    if (registerNum !== '-') {
+        form.value.data_len = registerNum
+    }
 })
 
 function resetForm() {

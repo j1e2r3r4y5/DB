@@ -16,7 +16,16 @@
         </div>
         <el-table :data="variableList" style="width: 100%;" :header-cell-style="{ color: '#000', fontWeight: 'bold' }">
             <el-table-column prop="varName" label="变量名" min-width="120"></el-table-column>
-            <el-table-column prop="data" label="数据值" min-width="100"></el-table-column>
+            <el-table-column prop="dataType" label="数据类型" min-width="100">
+                <template #default="scope">
+                    {{ formatDataType(scope.row.dataType) }}
+                </template>
+            </el-table-column>
+            <el-table-column label="数据值" min-width="150">
+                <template #default="scope">
+                    {{ formatDisplayValue(scope.row) }}
+                </template>
+            </el-table-column>
             <el-table-column prop="lasttime" label="最新上传时间" min-width="100"></el-table-column>
             <el-table-column label="操作" min-width="100">
                 <template #default="scope">
@@ -34,6 +43,7 @@
 import { ref, onMounted, watch, computed, onUnmounted } from 'vue'
 import api from '../../api'
 import DataDialog from './data_dialog.vue'
+import { formatDataType, DataType } from '../../utils/datatype'
 const props = defineProps({
     devId: {
         type: [String, Number],
@@ -54,6 +64,43 @@ const selectedDevice = computed(() =>
 const historyDialogVisible = ref(false)
 const historyData = ref([])
 let timer = null
+
+// 格式化显示值
+function formatDisplayValue(row) {
+    const dataType = String(row.dataType)
+    
+    // 优先使用解析后的值
+    if (dataType === DataType.BOOL && row.valueBool !== undefined && row.valueBool !== null) {
+        return row.valueBool ? 'true' : 'false'
+    }
+    if (dataType === DataType.STRING && row.valueString) {
+        return row.valueString
+    }
+    if ((dataType === DataType.FLOAT32 || dataType === DataType.FLOAT64) && 
+        row.valueFloat !== undefined && row.valueFloat !== null) {
+        // 修复浮点数显示问题 - 格式化浮点数
+        const val = Number(row.valueFloat)
+        if (!isNaN(val)) {
+            // 检查是否接近整数
+            if (Math.abs(val - Math.round(val)) < 0.0000001) {
+                return Math.round(val)
+            }
+            // 固定显示6位小数
+            return val.toFixed(6)
+        }
+        return row.valueFloat
+    }
+    if ((dataType === DataType.INT16 || dataType === DataType.INT32) && 
+        row.valueInt !== undefined && row.valueInt !== null) {
+        return row.valueInt
+    }
+    if (row.parsedValue !== undefined && row.parsedValue !== null) {
+        return row.parsedValue
+    }
+    
+    // 回退到原始值
+    return row.data ?? '-'
+}
 
 // 刷新方法
 async function refresh() {
@@ -171,7 +218,12 @@ async function fetchVariableList(devID) {
                     const key = `${slave}_${dtype}_${daddr}`
                     latestDataMap[key] = {
                         time: item.Time ?? item.time ?? item.TimeStr ?? '-',
-                        value: item.Value ?? item.value ?? item.Val ?? '-'
+                        value: item.Value ?? item.value ?? item.Val ?? '-',
+                        valueBool: item.ValueBool ?? item.valueBool ?? item.value_bool,
+                        valueInt: item.ValueInt ?? item.valueInt ?? item.value_int,
+                        valueFloat: item.ValueFloat ?? item.valueFloat ?? item.value_float,
+                        valueString: item.ValueString ?? item.valueString ?? item.value_string,
+                        parsedValue: item.ParsedValue ?? item.parsedValue
                     }
                 })
             } catch (err) {
@@ -186,7 +238,12 @@ async function fetchVariableList(devID) {
             return {
                 ...v,
                 lasttime: latest.time ?? '-',
-                data: latest.value ?? '-'
+                data: latest.value ?? '-',
+                valueBool: latest.valueBool,
+                valueInt: latest.valueInt,
+                valueFloat: latest.valueFloat,
+                valueString: latest.valueString,
+                parsedValue: latest.parsedValue
             }
         })
     } catch (e) {

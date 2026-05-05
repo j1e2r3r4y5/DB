@@ -51,3 +51,10 @@ type RecoveryVariableReq struct {
 	VarName string `json:"var_name" dc:"变量名称"`
 }
 type RecoveryVariableRes struct{}
+type MigrateDataTypesReq struct {
+	g.Meta `path:"/migratedatatypes" method:"post" summary:"数据类型迁移" tags:"变量管理"`
+}
+type MigrateDataTypesRes struct {
+	Message      string `json:"message" dc:"操作结果"`
+	TotalMigrated int   `json:"total_migrated" dc:"迁移变量总数"`
+}

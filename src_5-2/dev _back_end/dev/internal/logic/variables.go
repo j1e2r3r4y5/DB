@@ -7,6 +7,7 @@ import (
 	"dev/internal/service"
 
 	"github.com/gogf/gf/v2/frame/g"
+	"github.com/gogf/gf/v2/database/gdb"
 )
 
 type sVariable struct {
@@ -52,12 +53,12 @@ func (s *sVariable) AddVariable(ctx context.Context, variable *model.Variables) 
 		g.Log().Error(ctx, "新建变量记录失败", err)
 		return err
 	}
-	// _, err = dao.Caching.Ctx(ctx).OmitEmpty().Data(variable).Insert()
-	// fmt.Println("测试数据", variable)
-	// if err != nil {
-	// 	g.Log().Error(ctx, "新建变量记录失败", err)
-	// 	return err
-	// }
+	_, err = dao.Caching.Ctx(ctx).OmitEmpty().Data(variable).Insert()
+	g.Log().Info(ctx, "同步到缓存表", variable)
+	if err != nil {
+		g.Log().Error(ctx, "同步缓存表失败", err)
+		return err
+	}
 	_, err = dao.Dev.Ctx(ctx).Where(dao.Dev.Columns().Id, variable.DevID).Data(g.Map{
 		"Changeflag": 1,
 	}).Update()
@@ -179,4 +180,97 @@ func (s *sVariable) DeleteVariable(ctx context.Context, in *model.Variables) err
 		g.Log().Error(ctx, "删除缓存表记录失败", err)
 	}
 	return nil
+}
+
+// MigrateDataTypes 迁移旧数据类型到新格式
+// 旧 -> 新:
+// 1 (整数) -> 1 (int16)
+// 2 (浮点数) -> 3 (float32)
+// 3 (定点数) -> 3 (float32)
+// 4 (字符串) -> 5 (string)
+func (s *sVariable) MigrateDataTypes(ctx context.Context) (int, error) {
+	g.Log().Info(ctx, "开始数据类型迁移")
+
+	var totalMigrated int
+
+	// 1. 在事务中执行迁移
+	err := dao.Variables.Transaction(ctx, func(ctx context.Context, tx gdb.TX) error {
+		// 查询需要迁移的变量
+		var variables []*model.Variables
+		err := dao.Variables.Ctx(ctx).WhereIn(dao.Variables.Columns().DataType, []string{"1", "2", "3", "4"}).Scan(&variables)
+		if err != nil {
+			g.Log().Error(ctx, "查询需要迁移的变量失败", err)
+			return err
+		}
+
+		totalMigrated = len(variables)
+		g.Log().Info(ctx, "需要迁移的变量数量:", totalMigrated)
+
+		// 逐个变量迁移
+		for _, v := range variables {
+			newType := v.DataType
+
+			switch v.DataType {
+			case "1": // 整数 -> int16
+				newType = "1"
+			case "2": // 浮点数 -> float32
+				newType = "3"
+			case "3": // 定点数 -> float32
+				newType = "3"
+			case "4": // 字符串 -> string
+				newType = "5"
+			}
+
+			if newType != v.DataType {
+				// 更新变量表
+				_, err := dao.Variables.Ctx(ctx).Data(g.Map{
+					dao.Variables.Columns().DataType: newType,
+				}).WherePri(v.Id).Update()
+				if err != nil {
+					g.Log().Error(ctx, "更新变量表失败", v.Id, err)
+					return err
+				}
+
+				// 更新缓存表（如果存在）
+				_, err = dao.Caching.Ctx(ctx).Data(g.Map{
+					dao.Caching.Columns().DataType: newType,
+				}).Where(dao.Caching.Columns().DevID, v.DevID).
+					Where(dao.Caching.Columns().ModbusType, v.ModbusType).
+					Where(dao.Caching.Columns().ModbusDevice, v.ModbusDevice).
+					Where(dao.Caching.Columns().ModbusAddr, v.ModbusAddr).Update()
+				if err != nil {
+					g.Log().Warning(ctx, "更新缓存表失败", v.Id, err)
+				}
+
+				g.Log().Info(ctx, "变量迁移完成", v.Id, v.VarName, v.DataType, "->", newType)
+			}
+		}
+
+		// 更新所有有变量的设备的变更标志
+		// 先获取有变量的设备ID列表
+		var devIds []int
+		err = dao.Variables.Ctx(ctx).Fields("DISTINCT dev_id").Scan(&devIds)
+		if err != nil {
+			g.Log().Warning(ctx, "获取设备ID列表失败", err)
+		} else {
+			if len(devIds) > 0 {
+				_, err = dao.Dev.Ctx(ctx).Data(g.Map{
+					dao.Dev.Columns().Changeflag: 1,
+				}).WhereIn(dao.Dev.Columns().Id, devIds).Update()
+				if err != nil {
+					g.Log().Warning(ctx, "更新设备标志失败", err)
+				}
+			}
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		g.Log().Error(ctx, "数据类型迁移失败", err)
+		return 0, err
+	}
+
+	g.Log().Info(ctx, "数据类型迁移成功，迁移数量:", totalMigrated)
+	return totalMigrated, nil
 }

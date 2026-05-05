@@ -109,23 +109,36 @@ const deleteTarget = ref(null)
 // const configDialogVisible = ref(false)
 // const configRow = ref(null)
 const dataTypeMap = {
-    '1': '整数',
-    '2': '浮点数',
-    '3': '定点数',
-    '4': '字符串'
-}
+		'0': '布尔值',
+		'1': 'int16',
+		'2': 'int32',
+		'3': 'float32',
+		'4': 'float64',
+		'5': '字符串'
+	}
 
 function dataTypeFormatter(row, column, cellValue) {
     if (column.property === 'dataType') {
-        return dataTypeMap[cellValue] || cellValue || '-';
+        // 先检查是否有新类型映射
+        if (dataTypeMap[cellValue]) {
+            return dataTypeMap[cellValue];
+        }
+        // 兼容旧数据类型的显示（给用户提示这是旧格式）
+        const oldTypeMap = {
+            '1': '整数 (旧)',
+            '2': '浮点数 (旧)',
+            '3': '定点数 (旧)',
+            '4': '字符串 (旧)'
+        };
+        return oldTypeMap[cellValue] || cellValue || '-';
     }
     if (column.property === 'modbusType') {
         // 标准 Modbus 协议分区定义
         const modbusTypeMap = {
-            '1': '0区 线圈 (Coils)',           // 0x01/0x05, 读写, 位类型
-            '2': '1区 离散输入 (Discrete Inputs)', // 0x02, 只读, 位类型
-            '3': '3区 输入寄存器 (Input Registers)', // 0x04, 只读, 16位字
-            '4': '4区 保持寄存器 (Holding Registers)' // 0x03/0x06, 读写, 16位字
+            '0': '0区 线圈 (Coils)',
+            '1': '1区 离散输入 (Discrete Inputs)',
+            '3': '3区 输入寄存器 (Input Registers)',
+            '4': '4区 保持寄存器 (Holding Registers)'
         };
         return modbusTypeMap[cellValue] || cellValue || '-';
     }

@@ -51,15 +51,25 @@ class Config:
         4: 0x03,
     }
 
+    # 按照分析报告中的示例变量地址定义
+    # 变量1: 温度(float32), 地址 0, 2 个寄存器
     SLAVE_1_HOLDING_REG_TEMPERATURE = 0
-    SLAVE_1_HOLDING_REG_HUMIDITY = 1
-    SLAVE_1_HOLDING_REG_POWER = 9
+    # 变量2: 湿度(int16), 地址 2, 1 个寄存器
+    SLAVE_1_HOLDING_REG_HUMIDITY = 2
+    # 变量3: 功率(float64), 地址 3, 4 个寄存器
+    SLAVE_1_HOLDING_REG_POWER = 3
+    # 变量4: 累计电能(int32), 地址 7, 2 个寄存器
+    SLAVE_1_HOLDING_REG_ENERGY = 7
+    # 变量5: 开关状态(bool), 线圈地址 0
     SLAVE_1_COIL_SWITCH = 0
+    # 变量6: 设备描述(string), 地址 10, 10 个寄存器
+    SLAVE_1_HOLDING_REG_DEVICE_DESC = 10
 
     DEFAULT_SLAVE_1_REGISTERS = {
         "temperature": {"addr": SLAVE_1_HOLDING_REG_TEMPERATURE, "type": 4, "init_value": 250},
         "humidity": {"addr": SLAVE_1_HOLDING_REG_HUMIDITY, "type": 4, "init_value": 600},
         "power": {"addr": SLAVE_1_HOLDING_REG_POWER, "type": 4, "init_value": 1500},
+        "energy": {"addr": SLAVE_1_HOLDING_REG_ENERGY, "type": 4, "init_value": 1000},
     }
 
     DEFAULT_SLAVE_1_COILS = {
@@ -68,9 +78,10 @@ class Config:
 
     DEFAULT_TEST_DATA = {
         "temperature": {"addr": 0, "type": 4, "init_value": 250, "min": 200, "max": 300},
-        "humidity": {"addr": 1, "type": 4, "init_value": 600, "min": 500, "max": 700},
+        "humidity": {"addr": 2, "type": 4, "init_value": 600, "min": 500, "max": 700},
         "switch": {"addr": 0, "type": 0, "init_value": 1},
-        "power": {"addr": 9, "type": 4, "init_value": 15000, "min": 14000, "max": 16000},
+        "power": {"addr": 3, "type": 4, "init_value": 15000, "min": 14000, "max": 16000},
+        "energy": {"addr": 7, "type": 4, "init_value": 100000, "min": 90000, "max": 110000},
     }
 
 

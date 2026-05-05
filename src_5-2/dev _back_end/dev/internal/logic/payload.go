@@ -534,6 +534,7 @@ import (
 	scanner "dev/utility"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -831,6 +832,16 @@ func (s *sPayload) PayloadHandler(ctx context.Context, devSerial string, payload
 		dataCount := int(dataCountBytes[0])<<8 | int(dataCountBytes[1])
 		g.Log().Debug(ctx, fmt.Sprintf("数据上发：设备[%s] 数据项数量[%d]", devSerial, dataCount))
 
+		// 获取设备ID和缓存变量
+		devId, err := dao.Dev.Ctx(ctx).Where(dao.Dev.Columns().DevSerial, devSerial).Value(dao.Dev.Columns().Id)
+		if err != nil {
+			g.Log().Error(ctx, "获取设备ID失败", err)
+		}
+		var cacheVars []*model.Variables
+		if devId != nil {
+			_ = dao.Caching.Ctx(ctx).Where(dao.Caching.Columns().DevID, devId).Scan(&cacheVars)
+		}
+
 		// 遍历解析每个数据项
 		for i := 0; i < dataCount; i++ {
 			// 1.1 读取1字节从站地址
@@ -874,58 +885,56 @@ func (s *sPayload) PayloadHandler(ctx context.Context, devSerial string, payload
 				continue
 			}
 
-			// ==============================================
-			// 4. 按Modbus类型拆分数据（保留原有入库逻辑）
-			// ==============================================
-			// 注意：拆分逻辑需要根据实际业务调整——如果协议里dataLen是“字节数”，
-			// 那么线圈/寄存器的“位数/寄存器数”需要反过来计算（比如线圈位数 = dataLen * 8）
-			// 这里假设业务还是需要按位/按寄存器拆分，所以补充反向计算逻辑
-			// 实际还可以优化，比如根据数据配置下发决定存哪一位或者哪几字节存一起，方便从数据库读取与转化时直接使用
-			var itemCount int // 拆分后的记录数（线圈是位数，寄存器是寄存器数）
-			switch modbusType {
-			case 0, 1: // 线圈/离散输入：字节数 * 8 = 位数
-				itemCount = dataLen * 8
-			case 3, 4: // 保持寄存器/输入寄存器：字节数 / 2 = 寄存器数
-				itemCount = dataLen / 2
-			default:
-				g.Log().Warning(ctx, fmt.Sprintf("第%d个数据项未知Modbus类型：%d，跳过拆分", i, modbusType))
-				continue
-			}
-
-			// 拆分并写入InfluxDB
-			if modbusType == 0 || modbusType == 1 {
-				// 线圈/离散输入：按位拆分
-				for bitIdx := 0; bitIdx < itemCount; bitIdx++ {
-					byteIdx := bitIdx / 8
-					bitOffset := bitIdx % 8
-					if byteIdx < len(dataValueBytes) {
-						bitVal := (dataValueBytes[byteIdx] >> bitOffset) & 0x01
-						dataItem := &model.DataItem{
-							DevSerial:  devSerial,
-							SlaveAddr:  slaveAddr,
-							ModbusType: modbusType,
-							DataAddr:   baseAddr + bitIdx,
-							DataLeng:   1,
-							DataValue:  fmt.Sprintf("%d", bitVal),
-						}
-						WritdataToInflux(ctx, org, bucket, dataItem, Featurescode)
-					}
+			// 使用新的解析逻辑处理数据
+			if len(cacheVars) > 0 {
+				ParseAndWriteData(ctx, devSerial, slaveAddr, modbusType, baseAddr, dataValueBytes, cacheVars)
+			} else {
+				// ==============================================
+				// 4. 按Modbus类型拆分数据（保留原有入库逻辑作为降级）
+				// ==============================================
+				var itemCount int
+				switch modbusType {
+				case 0, 1:
+					itemCount = dataLen * 8
+				case 3, 4:
+					itemCount = dataLen / 2
+				default:
+					g.Log().Warning(ctx, fmt.Sprintf("第%d个数据项未知Modbus类型：%d，跳过拆分", i, modbusType))
+					continue
 				}
-			} else if modbusType == 3 || modbusType == 4 {
-				// 保持寄存器/输入寄存器：按2字节拆分
-				for regIdx := 0; regIdx < itemCount; regIdx++ {
-					offset := regIdx * 2
-					if offset+1 < len(dataValueBytes) {
-						regVal := int(dataValueBytes[offset])<<8 | int(dataValueBytes[offset+1])
-						dataItem := &model.DataItem{
-							DevSerial:  devSerial,
-							SlaveAddr:  slaveAddr,
-							ModbusType: modbusType,
-							DataAddr:   baseAddr + regIdx,
-							DataLeng:   1,
-							DataValue:  fmt.Sprintf("%d", regVal),
+
+				if modbusType == 0 || modbusType == 1 {
+					for bitIdx := 0; bitIdx < itemCount; bitIdx++ {
+						byteIdx := bitIdx / 8
+						bitOffset := bitIdx % 8
+						if byteIdx < len(dataValueBytes) {
+							bitVal := (dataValueBytes[byteIdx] >> bitOffset) & 0x01
+							dataItem := &model.DataItem{
+								DevSerial:  devSerial,
+								SlaveAddr:  slaveAddr,
+								ModbusType: modbusType,
+								DataAddr:   baseAddr + bitIdx,
+								DataLen:    1,
+								DataValue:  fmt.Sprintf("%d", bitVal),
+							}
+							WritdataToInflux(ctx, org, bucket, dataItem, Featurescode)
 						}
-						WritdataToInflux(ctx, org, bucket, dataItem, Featurescode)
+					}
+				} else if modbusType == 3 || modbusType == 4 {
+					for regIdx := 0; regIdx < itemCount; regIdx++ {
+						offset := regIdx * 2
+						if offset+1 < len(dataValueBytes) {
+							regVal := int(dataValueBytes[offset])<<8 | int(dataValueBytes[offset+1])
+							dataItem := &model.DataItem{
+								DevSerial:  devSerial,
+								SlaveAddr:  slaveAddr,
+								ModbusType: modbusType,
+								DataAddr:   baseAddr + regIdx,
+								DataLen:    1,
+								DataValue:  fmt.Sprintf("%d", regVal),
+							}
+							WritdataToInflux(ctx, org, bucket, dataItem, Featurescode)
+						}
 					}
 				}
 			}
@@ -1164,6 +1173,139 @@ func WritdataToInflux(ctx context.Context, org, bucket string, dataItem *model.D
 		g.Log().Error(ctx, "写入数据到InfluxDB失败", "dataItem", dataItem, "err", err)
 		return err
 	}
-	g.Log().Info(ctx, "写入数据到InfluxDB成功", "dataItem", dataItem)
+	g.Log().Info(ctx, "写入数据到InfluxDB成功", dataItem, dataItem)
 	return nil
+}
+
+// WriteEnhancedDataToInflux 写入增强的数据到InfluxDB（同时存原始值和解析后的值）
+func WriteEnhancedDataToInflux(ctx context.Context, org, bucket string, dataItem *model.EnhancedDataItem) error {
+	writeAPI := InfluxClient.WriteAPIBlocking(org, bucket)
+
+	tags := map[string]string{
+		"dev_serial":  dataItem.DevSerial,
+		"slave_addr":  fmt.Sprintf("%d", dataItem.SlaveAddr),
+		"modbus_type": fmt.Sprintf("%d", dataItem.ModbusType),
+		"data_addr":   fmt.Sprintf("%d", dataItem.DataAddr),
+		"data_type":   dataItem.DataType,
+	}
+
+	fields := map[string]interface{}{
+		"raw_value": dataItem.RawValue,
+	}
+
+	if dataItem.ValueBool != nil {
+		fields["value_bool"] = *dataItem.ValueBool
+	}
+	if dataItem.ValueInt != nil {
+		fields["value_int"] = *dataItem.ValueInt
+	}
+	if dataItem.ValueFloat != nil {
+		fields["value_float"] = *dataItem.ValueFloat
+	}
+	if dataItem.ValueString != nil {
+		fields["value_string"] = *dataItem.ValueString
+	}
+
+	if dataItem.ParsedValue != nil {
+		fields["parsed_value"] = scanner.ValueToString(dataItem.DataType, dataItem.ParsedValue)
+	}
+
+	point := write.NewPoint("DataItem", tags, fields, time.Now())
+	if err := writeAPI.WritePoint(ctx, point); err != nil {
+		g.Log().Error(ctx, "写入增强数据到InfluxDB失败", dataItem, err)
+		return err
+	}
+	g.Log().Info(ctx, "写入增强数据到InfluxDB成功", dataItem)
+	return nil
+}
+
+// ParseAndWriteData 解析并写入数据到InfluxDB（根据缓存表中的数据类型）
+func ParseAndWriteData(ctx context.Context, devSerial string, slaveAddr int, modbusType int, baseAddr int, data []byte, cacheVars []*model.Variables) {
+	org := g.Cfg().MustGet(ctx, "influxdb.org").String()
+	bucket := g.Cfg().MustGet(ctx, "influxdb.bucket").String()
+
+	for _, cacheVar := range cacheVars {
+		if cacheVar.ModbusDevice != slaveAddr {
+			continue
+		}
+		if cacheVar.ModbusType != fmt.Sprintf("%d", modbusType) {
+			continue
+		}
+
+		modbusAddr := cacheVar.ModbusAddr
+		if modbusAddr < baseAddr {
+			continue
+		}
+
+		offset := (modbusAddr - baseAddr) * 2
+		if offset < 0 || offset >= len(data) {
+			continue
+		}
+
+		dataType := cacheVar.DataType
+
+		info, ok := scanner.GetDataTypeInfo(dataType)
+		if !ok {
+			info = scanner.DataTypeInfos[scanner.DataTypeInt16]
+		}
+
+		byteNum := info.ByteNum
+		if dataType == scanner.DataTypeString {
+			stringLen, _ := strconv.Atoi(cacheVar.StringLen)
+			if stringLen <= 0 {
+				stringLen = 20
+			}
+			byteNum = stringLen
+		}
+
+		if offset+byteNum > len(data) {
+			byteNum = len(data) - offset
+			if byteNum <= 0 {
+				continue
+			}
+		}
+
+		varData := data[offset : offset+byteNum]
+
+		stringLen, _ := strconv.Atoi(cacheVar.StringLen)
+		bitOffset := 0
+		parsedValue := scanner.DecodeData(dataType, varData, bitOffset, stringLen)
+
+		enhancedItem := &model.EnhancedDataItem{
+			DevSerial:   devSerial,
+			SlaveAddr:   slaveAddr,
+			ModbusType:  modbusType,
+			DataAddr:    modbusAddr,
+			DataType:    dataType,
+			RawValue:    hex.EncodeToString(varData),
+			ParsedValue: parsedValue,
+			DataLen:     byteNum,
+		}
+
+		switch dataType {
+		case scanner.DataTypeBool:
+			if boolVal, ok := parsedValue.(bool); ok {
+				enhancedItem.ValueBool = &boolVal
+			}
+		case scanner.DataTypeInt16, scanner.DataTypeInt32:
+			if intVal, ok := parsedValue.(int32); ok {
+				enhancedItem.ValueInt = &intVal
+			}
+		case scanner.DataTypeFloat32:
+			if floatVal, ok := parsedValue.(float32); ok {
+				float64Val := float64(floatVal)
+				enhancedItem.ValueFloat = &float64Val
+			}
+		case scanner.DataTypeFloat64:
+			if floatVal, ok := parsedValue.(float64); ok {
+				enhancedItem.ValueFloat = &floatVal
+			}
+		case scanner.DataTypeString:
+			if strVal, ok := parsedValue.(string); ok {
+				enhancedItem.ValueString = &strVal
+			}
+		}
+
+		WriteEnhancedDataToInflux(ctx, org, bucket, enhancedItem)
+	}
 }

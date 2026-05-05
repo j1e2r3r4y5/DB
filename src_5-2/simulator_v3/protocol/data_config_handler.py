@@ -80,7 +80,20 @@ class DataConfigHandler(ProtocolHandler):
                 start_addr = struct.unpack('>H', payload[offset + 2:offset + 4])[0]
                 quantity = struct.unpack('>H', payload[offset + 4:offset + 6])[0]
 
-                config = DataConfig(slave_id, data_type, start_addr, quantity)
+                # 分区号 -> 功能码 转换
+                # 0区 线圈 → 功能码 0x01
+                # 1区 离散输入 → 功能码 0x02
+                # 3区 输入寄存器 → 功能码 0x04
+                # 4区 保持寄存器 → 功能码 0x03
+                func_code_map = {
+                    0: 0x01,
+                    1: 0x02,
+                    3: 0x04,
+                    4: 0x03,
+                }
+                func_code = func_code_map.get(data_type, 0x03)  # 默认用0x03
+
+                config = DataConfig(slave_id, func_code, start_addr, quantity)
                 config_groups.append(config)
 
                 logger.debug(f"  Group {i}: slave={slave_id}, type={data_type}, addr={start_addr}, qty={quantity}")

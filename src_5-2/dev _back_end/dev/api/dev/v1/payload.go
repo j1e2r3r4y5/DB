@@ -55,6 +55,12 @@ type DataItemres struct {
 	FeaturesCode string `json:"featuresCode,omitempty"`
 	Field        string `json:"field"`
 	Value        string `json:"value"`
+	RawValue     string `json:"rawValue,omitempty"`
+	ParsedValue  string `json:"parsedValue,omitempty"`
+	ValueBool    *bool  `json:"valueBool,omitempty"`
+	ValueInt     *int32 `json:"valueInt,omitempty"`
+	ValueFloat   *float64 `json:"valueFloat,omitempty"`
+	ValueString  *string `json:"valueString,omitempty"`
 }
 type Datareq struct {
 	g.Meta       `path:"/data" method:"post" summary:"查询数据表" tags:"查询时序数据"`

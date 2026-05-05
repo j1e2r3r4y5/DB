@@ -85,3 +85,22 @@ func (c cVariable) RecoveryVariable(ctx context.Context, req *v1.RecoveryVariabl
 	}
 	return
 }
+
+// 数据类型迁移
+func (c cVariable) MigrateDataTypes(ctx context.Context, req *v1.MigrateDataTypesReq) (res *v1.MigrateDataTypesRes, err error) {
+	g.Log().Info(ctx, "数据类型迁移开始")
+	
+	totalMigrated, err := service.Variables().MigrateDataTypes(ctx)
+	if err != nil {
+		g.Log().Error(ctx, "数据类型迁移失败", err)
+		return nil, gerror.NewCode(gcode.CodeInternalError, "数据类型迁移失败")
+	}
+	
+	res = &v1.MigrateDataTypesRes{
+		Message: fmt.Sprintf("数据类型迁移成功，共迁移 %d 个变量", totalMigrated),
+		TotalMigrated: totalMigrated,
+	}
+	
+	g.Log().Info(ctx, "数据类型迁移完成", res.Message)
+	return
+}

@@ -30,7 +30,7 @@ redis:
   prefix: "Dev4G_"
 
 influxdb:
-  token: "XysI14uPSHQTHA8aqYwSrmMaJJf51orGpu-Pxtot8fVKx50aCQWBX9rH2SmDJzryKSvnCtcS19XWlncth-xE3g=="
+  token: "Hv2o3YysgXHcLT_VSA1IAz2BV3u89Tn5c-Px9zSdbb_g7KcDriZF2EBHIL2DLbXtWLsftQiAVWug5SISKLgPmg=="
   url: "http://127.0.0.1:8086"
   org: "myorg"
   bucket: "mybucket"

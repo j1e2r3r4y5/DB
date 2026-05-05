@@ -1,4 +1,4 @@
-package scanner
+package utility
 
 import (
 	"github.com/gogf/gf/v2/errors/gerror"

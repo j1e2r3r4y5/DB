@@ -257,7 +257,15 @@ class DTUSimulator:
                             else:
                                 continue
 
-                            payload += bytes([cfg.slave_id, cfg.func_code])
+                            # 功能码转分区号：0x01→0区，0x02→1区，0x03→4区，0x04→3区
+                            func_to_type = {
+                                0x01: 0x00,
+                                0x02: 0x01,
+                                0x03: 0x04,
+                                0x04: 0x03,
+                            }
+                            data_type = func_to_type.get(cfg.func_code, cfg.func_code)
+                            payload += bytes([cfg.slave_id, data_type])
                             payload += cfg.start_addr.to_bytes(2, 'big')
                             payload += len(data).to_bytes(2, 'big')
                             payload += data
@@ -281,10 +289,7 @@ class DTUSimulator:
         try:
             device = self.device_pool.get_device(1)
             if device:
-                device.simulate_temperature_change(250, 10)
-                device.simulate_humidity_change(600, 20)
-                device.simulate_power_change(1500, 500)
-                device.toggle_switch()
+                device.simulate_all_data_changes()
         except Exception as e:
             logger.warning(f"Data simulation error: {e}")
 

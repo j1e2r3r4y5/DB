@@ -12,6 +12,7 @@ type (
 		AddVariable(ctx context.Context, variable *model.Variables) error
 		UpdateVariable(ctx context.Context, variable *model.Variables) error
 		DeleteVariable(ctx context.Context, in *model.Variables) error
+		MigrateDataTypes(ctx context.Context) (int, error)
 	}
 )
 

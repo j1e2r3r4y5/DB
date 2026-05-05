@@ -30,6 +30,7 @@
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import api from '../../api'
+import { calculateRegisterNum } from '../../utils/datatype'
 
 // ===================== Props参数部分：【改动2】优化参数默认值，支持批量模式 =====================
 const props = defineProps({

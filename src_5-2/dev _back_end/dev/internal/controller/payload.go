@@ -117,14 +117,19 @@ func (c *cpayload) QueryBatchDataItemFromInflux(ctx context.Context, req *v1.Dat
 		loc = time.UTC
 	}
 
-	type RecordData struct {
-		time   time.Time
-		field  string
-		value  interface{}
-		addr   int
+	// 每个地址的数据结构
+	type AddrData struct {
+		latestTime time.Time
+		value         string
+		rawValue      string
+		parsedValue   string
+		valueBool     *bool
+		valueInt      *int32
+		valueFloat    *float64
+		valueString   *string
 	}
 
-	addrRecords := make(map[int][]*RecordData)
+	addrDataMap := make(map[int]*AddrData)
 
 	for result.Next() {
 		record := result.Record()
@@ -134,6 +139,7 @@ func (c *cpayload) QueryBatchDataItemFromInflux(ctx context.Context, req *v1.Dat
 		}
 		field := record.Field()
 
+		// 获取 data_addr
 		dataAddr := 0
 		if addrVal := record.ValueByKey("data_addr"); addrVal != nil {
 			switch v := addrVal.(type) {
@@ -146,36 +152,93 @@ func (c *cpayload) QueryBatchDataItemFromInflux(ctx context.Context, req *v1.Dat
 			}
 		}
 
-		if field == "datavalue" {
-			addrRecords[dataAddr] = append(addrRecords[dataAddr], &RecordData{
-				time:  recordTime,
-				field: field,
-				value: record.Value(),
-				addr:  dataAddr,
-			})
+		// 如果该地址不在请求列表中，跳过
+		if !addrSet[dataAddr] {
+			continue
+		}
+
+		// 获取或创建该地址的数据结构
+		addrData, found := addrDataMap[dataAddr]
+		if !found {
+			addrData = &AddrData{}
+			addrDataMap[dataAddr] = addrData
+		}
+
+		// 如果这条记录比已有记录新，更新时间和所有字段
+		if addrData.latestTime.IsZero() || recordTime.After(addrData.latestTime) {
+			addrData.latestTime = recordTime
+			// 重置所有字段，准备填充
+			addrData.value = ""
+			addrData.rawValue = ""
+			addrData.parsedValue = ""
+			addrData.valueBool = nil
+			addrData.valueInt = nil
+			addrData.valueFloat = nil
+			addrData.valueString = nil
+		}
+
+		// 只处理最新时间的数据
+		if recordTime != addrData.latestTime {
+			continue
+		}
+
+		// 按字段填充
+		switch field {
+		case "datavalue":
+			addrData.value = fmt.Sprintf("%v", record.Value())
+		case "raw_value":
+			addrData.rawValue = fmt.Sprintf("%v", record.Value())
+		case "parsed_value":
+			addrData.parsedValue = fmt.Sprintf("%v", record.Value())
+		case "value_bool":
+			if boolVal, ok := record.Value().(bool); ok {
+				addrData.valueBool = &boolVal
+			}
+		case "value_int":
+			if intVal, ok := record.Value().(int64); ok {
+				int32Val := int32(intVal)
+				addrData.valueInt = &int32Val
+			}
+		case "value_float":
+			if floatVal, ok := record.Value().(float64); ok {
+				addrData.valueFloat = &floatVal
+			}
+		case "value_string":
+			if strVal, ok := record.Value().(string); ok {
+				addrData.valueString = &strVal
+			}
 		}
 	}
 
-	// 按请求的 DataAddrs 顺序返回数据，保证顺序稳定！
+	// 按请求的 DataAddrs 顺序返回数据
 	for _, addr := range req.DataAddrs {
-		records, found := addrRecords[addr]
-		if !found || len(records) == 0 {
+		addrData, found := addrDataMap[addr]
+		if !found || addrData.latestTime.IsZero() {
 			continue
 		}
-		latest := records[0]
-		for _, r := range records {
-			if r.time.After(latest.time) {
-				latest = r
-			}
-		}
-		g.Log().Debug(ctx, "查询到的数据", "addr", latest.addr, "value", latest.value)
+		
+		g.Log().Debug(ctx, "查询到的数据", 
+			"addr", addr, 
+			"value", addrData.value,
+			"valueBool", addrData.valueBool,
+			"valueInt", addrData.valueInt,
+			"valueFloat", addrData.valueFloat,
+			"valueString", addrData.valueString)
+		
 		res = append(res, &v1.DataItemres{
-			Time:      latest.time.In(loc).Format("2006-01-02 15:04:05"),
-			DevSerial: req.DevSerial,
-			SlaveAddr: req.SlaveAddr,
-			DataType:  req.ModbusType,
-			DataAddr:  latest.addr,
-			Value:     fmt.Sprintf("%v", latest.value),
+			Time:        addrData.latestTime.In(loc).Format("2006-01-02 15:04:05"),
+			DevSerial:   req.DevSerial,
+			SlaveAddr:   req.SlaveAddr,
+			DataType:    req.ModbusType,
+			DataAddr:    addr,
+			Field:       "",
+			Value:       addrData.value,
+			RawValue:    addrData.rawValue,
+			ParsedValue: addrData.parsedValue,
+			ValueBool:   addrData.valueBool,
+			ValueInt:    addrData.valueInt,
+			ValueFloat:  addrData.valueFloat,
+			ValueString: addrData.valueString,
 		})
 	}
 
@@ -220,13 +283,17 @@ func (c *cpayload) QueryallData(ctx context.Context, req *v1.AllData) (res []*v1
 		loc = time.UTC
 	}
 
-	type RecordData struct {
-		time  time.Time
-		value interface{}
-		addr  int
+	// 按时间分组记录
+	type TimeRecord struct {
+		value         string
+		rawValue      string
+		parsedValue   string
+		valueBool     *bool
+		valueInt      *int32
+		valueFloat    *float64
+		valueString   *string
 	}
-
-	allRecords := make([]*RecordData, 0)
+	timeRecordMap := make(map[string]*TimeRecord)
 
 	for result.Next() {
 		record := result.Record()
@@ -234,10 +301,8 @@ func (c *cpayload) QueryallData(ctx context.Context, req *v1.AllData) (res []*v1
 		if recordTime.IsZero() {
 			continue
 		}
+		timeKey := recordTime.In(loc).Format("2006-01-02 15:04:05")
 		field := record.Field()
-		if field != "datavalue" {
-			continue
-		}
 
 		// 获取 data_addr
 		dataAddr := 0
@@ -257,22 +322,57 @@ func (c *cpayload) QueryallData(ctx context.Context, req *v1.AllData) (res []*v1
 			continue
 		}
 
-		allRecords = append(allRecords, &RecordData{
-			time:  recordTime,
-			value: record.Value(),
-			addr:  dataAddr,
-		})
+		// 获取或创建该时间的数据结构
+		timeRecord, found := timeRecordMap[timeKey]
+		if !found {
+			timeRecord = &TimeRecord{}
+			timeRecordMap[timeKey] = timeRecord
+		}
+
+		// 按字段填充
+		switch field {
+		case "datavalue":
+			timeRecord.value = fmt.Sprintf("%v", record.Value())
+		case "raw_value":
+			timeRecord.rawValue = fmt.Sprintf("%v", record.Value())
+		case "parsed_value":
+			timeRecord.parsedValue = fmt.Sprintf("%v", record.Value())
+		case "value_bool":
+			if boolVal, ok := record.Value().(bool); ok {
+				timeRecord.valueBool = &boolVal
+			}
+		case "value_int":
+			if intVal, ok := record.Value().(int64); ok {
+				int32Val := int32(intVal)
+				timeRecord.valueInt = &int32Val
+			}
+		case "value_float":
+			if floatVal, ok := record.Value().(float64); ok {
+				timeRecord.valueFloat = &floatVal
+			}
+		case "value_string":
+			if strVal, ok := record.Value().(string); ok {
+				timeRecord.valueString = &strVal
+			}
+		}
 	}
 
-	for _, r := range allRecords {
-		g.Log().Debug(ctx, "查询到的历史数据", "addr", r.addr, "value", r.value, "time", r.time)
+	// 构建结果
+	for timeKey, timeRecord := range timeRecordMap {
 		res = append(res, &v1.DataItemres{
-			Time:      r.time.In(loc).Format("2006-01-02 15:04:05"),
-			DevSerial: req.DevSerial,
-			SlaveAddr: req.SlaveAddr,
-			DataType:  req.ModbusType,
-			DataAddr:  r.addr,
-			Value:     fmt.Sprintf("%v", r.value),
+			Time:        timeKey,
+			DevSerial:   req.DevSerial,
+			SlaveAddr:   req.SlaveAddr,
+			DataType:    req.ModbusType,
+			DataAddr:    targetAddr,
+			Field:       "",
+			Value:       timeRecord.value,
+			RawValue:    timeRecord.rawValue,
+			ParsedValue: timeRecord.parsedValue,
+			ValueBool:   timeRecord.valueBool,
+			ValueInt:    timeRecord.valueInt,
+			ValueFloat:  timeRecord.valueFloat,
+			ValueString: timeRecord.valueString,
 		})
 	}
 
