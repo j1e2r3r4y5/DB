@@ -60,6 +60,7 @@ class DTUSimulator:
         self._initialize_components()
         self._register_handlers()
         self._setup_device_pool()
+        self._setup_default_data_configs()
         self._setup_modbus_tcp_server()
         self._setup_data_scheduler()
 
@@ -93,16 +94,45 @@ class DTUSimulator:
         logger.info("Protocol handlers registered")
 
     def _setup_device_pool(self):
-        default_device = self.device_pool.get_device(1)
-        if default_device:
-            default_device.holding_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = 250
-            default_device.holding_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = 600
-            default_device.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER] = 1500
-            default_device.input_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = 250
-            default_device.input_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = 600
-            default_device.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER] = 1500
-            default_device.coils._data[config.SLAVE_1_COIL_SWITCH] = 1
+        # virtual_device.py 中的 _initialize_default_data 已经完成了初始化，这里不再重复设置
         logger.info("Device pool initialized")
+
+    def _setup_default_data_configs(self):
+        # 设置默认的数据配置
+        default_configs = [
+            DataConfig(
+                slave_id=1,
+                func_code=3,  # 保持寄存器
+                start_addr=0,
+                quantity=2    # 温度
+            ),
+            DataConfig(
+                slave_id=1,
+                func_code=3,
+                start_addr=2,
+                quantity=1    # 湿度
+            ),
+            DataConfig(
+                slave_id=1,
+                func_code=3,
+                start_addr=3,
+                quantity=4    # 功率
+            ),
+            DataConfig(
+                slave_id=1,
+                func_code=3,
+                start_addr=7,
+                quantity=2    # 电能
+            ),
+            DataConfig(
+                slave_id=1,
+                func_code=3,
+                start_addr=10,
+                quantity=10   # 设备描述，10个寄存器=20字节
+            )
+        ]
+        self.config_manager.update_data_configs(default_configs)
+        logger.info(f"Default data configs set: {len(default_configs)} configs")
 
     def _setup_modbus_tcp_server(self):
         self.modbus_tcp_server = ModbusTCPServer(

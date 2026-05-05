@@ -2,13 +2,11 @@
     <el-dialog v-model="visible" :title="dialogTitle" width="400px">
         <el-form :model="form" label-width="100px">
             <el-form-item label="发送模式">
-                <el-select v-model="form.sendmodel" placeholder="请选择发送模式">
+                <el-select v-model="form.sendmodel" placeholder="请选择发送模式" disabled>
                     <el-option label="定时发送" value="00" />
-                    <el-option label="线圈置位" value="01" />
-                    <el-option label="寄存器变化" value="02" />
                 </el-select>
             </el-form-item>
-            <el-form-item :label="form.sendmodel === '00' ? '发送间隔(秒)' : '触发地址'">
+            <el-form-item label="发送间隔(秒)">
                 <div style="display: flex; gap: 8px; align-items: center;">
                     <el-select v-model="configType" style="width: 100px;" @change="handleConfigTypeChange">
                         <el-option label="十进制" value="dec" />
@@ -169,6 +167,11 @@ function close() {
     emit('success') // 关闭时通知父组件刷新
 }
 
+// ===================== 工具函数：十六进制字符串转字节 =====================
+function hexToByte(hexStr) {
+    return parseInt(hexStr, 16)
+}
+
 async function handleConfirm() {
     loading.value = true
     resultMsg.value = "";
@@ -176,29 +179,27 @@ async function handleConfirm() {
     try {
         // configInput 存库时始终转为十进制字符串
         let configStr = ''
+        let configData = 0
         if (configType.value === 'hex') {
-            // 十六进制转十进制字符串
-            const n = parseInt(configInput.value, 16)
-            configStr = isNaN(n) ? '' : String(n)
+            configData = parseInt(configInput.value, 16)
+            configStr = String(isNaN(configData) ? 0 : configData)
         } else {
-            configStr = String(Number(configInput.value))
+            configData = Number(configInput.value)
+            configStr = String(configData)
         }
+        // 发送模式和波特率转为字节
+        const sendMode = hexToByte(form.value.sendmodel || '00')
+        const baudRate = hexToByte(form.value.baud || '00')
+        
         if (isBatch.value && props.rows && props.rows.length) {
             // 批量配置
             // 先全部下发命令
             for (const dev of props.rows) {
-                let code = '02'
-                code += String(form.value.sendmodel || '').padStart(2, '0')
-                if (configType.value === 'hex') {
-                    code += String(configInput.value || '').padStart(4, '0')
-                } else {
-                    const hexStr = Number(configInput.value).toString(16).toUpperCase()
-                    code += hexStr.padStart(4, '0')
-                }
-                code += String(form.value.baud || '').padStart(2, '0')
-                await api.downpayload({
-                    serial: dev.sn,
-                    code: code
+                await api.sendModuleConfig({
+                    devSerial: dev.sn,
+                    sendMode: sendMode,
+                    configData: configData,
+                    baudRate: baudRate
                 })
             }
 
@@ -272,18 +273,11 @@ async function handleConfirm() {
             }, 2000)
         } else {
             // 单个配置
-            let code = '02'
-            code += String(form.value.sendmodel || '').padStart(2, '0')
-            if (configType.value === 'hex') {
-                code += String(configInput.value || '').padStart(4, '0')
-            } else {
-                const hexStr = Number(configInput.value).toString(16).toUpperCase()
-                code += hexStr.padStart(4, '0')
-            }
-            code += String(form.value.baud || '').padStart(2, '0')
-            const res = await api.downpayload({
-                serial: form.value.sn,
-                code: code
+            await api.sendModuleConfig({
+                devSerial: form.value.sn,
+                sendMode: sendMode,
+                configData: configData,
+                baudRate: baudRate
             })
 
             // 查询前保持 loading，收到查询结果后再关闭 loading

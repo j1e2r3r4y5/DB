@@ -35,13 +35,10 @@ class VirtualDevice:
         temp_reg1 = (temp_bytes[2] << 8) | temp_bytes[3]
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = temp_reg0
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE + 1] = temp_reg1
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = temp_reg0
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE + 1] = temp_reg1
         
         # 变量2: 湿度 (int16) - 地址 2, 1个寄存器
         humidity_value = 60  # %RH
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = humidity_value & 0xFFFF
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = humidity_value & 0xFFFF
         
         # 变量3: 功率 (float64) - 地址 3, 4个寄存器
         power_value = 1500.75  # W
@@ -54,10 +51,6 @@ class VirtualDevice:
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 1] = power_reg1
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 2] = power_reg2
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 3] = power_reg3
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER] = power_reg0
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 1] = power_reg1
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 2] = power_reg2
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 3] = power_reg3
         
         # 变量4: 累计电能 (int32) - 地址 7, 2个寄存器
         energy_value = 12345678  # Wh
@@ -66,8 +59,6 @@ class VirtualDevice:
         energy_reg1 = (energy_bytes[2] << 8) | energy_bytes[3]
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_ENERGY] = energy_reg0
         self.holding_registers._data[config.SLAVE_1_HOLDING_REG_ENERGY + 1] = energy_reg1
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_ENERGY] = energy_reg0
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_ENERGY + 1] = energy_reg1
         
         # 变量6: 设备描述 (string) - 地址 10, 10个寄存器 (20字节)
         device_desc = "ML307-Smart-Meter-001"
@@ -81,7 +72,6 @@ class VirtualDevice:
             if byte_offset + 1 < len(desc_bytes):
                 reg_value |= desc_bytes[byte_offset + 1]
             self.holding_registers._data[config.SLAVE_1_HOLDING_REG_DEVICE_DESC + i] = reg_value & 0xFFFF
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_DEVICE_DESC + i] = reg_value & 0xFFFF
         
         logger.debug(f"Initialized complete test data for slave_id={self.slave_id}")
 
@@ -119,8 +109,6 @@ class VirtualDevice:
                 self.coils._data[addr] = 1 if value else 0
             elif data_type == "discrete":
                 self.discrete_inputs._data[addr] = 1 if value else 0
-            elif data_type == "input":
-                self.input_registers._data[addr] = value & 0xFFFF
             else:
                 self.holding_registers._data[addr] = value & 0xFFFF
             logger.debug(f"Slave {self.slave_id}: Updated {data_type} at {addr} to {value}")
@@ -141,38 +129,6 @@ class VirtualDevice:
         with self._lock:
             return bool(self.coils._data.get(addr, 0))
 
-    def simulate_temperature_change(self, base_value: int = 250, variance: int = 10) -> int:
-        from config import config
-        delta = random.randint(-variance, variance)
-        new_value = max(0, min(1000, base_value + delta))
-        self.holding_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = new_value
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = new_value
-        return new_value
-
-    def simulate_humidity_change(self, base_value: int = 600, variance: int = 20) -> int:
-        from config import config
-        delta = random.randint(-variance, variance)
-        new_value = max(0, min(1000, base_value + delta))
-        self.holding_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = new_value
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = new_value
-        return new_value
-
-    def simulate_power_change(self, base_value: int = 1500, variance: int = 500) -> int:
-        from config import config
-        delta = random.randint(-variance, variance)
-        new_value = max(0, min(10000, base_value + delta))
-        self.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER] = new_value
-        self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER] = new_value
-        return new_value
-
-    def toggle_switch(self) -> bool:
-        from config import config
-        with self._lock:
-            current = self.coils._data.get(config.SLAVE_1_COIL_SWITCH, 0)
-            new_value = 0 if current else 1
-            self.coils._data[config.SLAVE_1_COIL_SWITCH] = new_value
-            return bool(new_value)
-    
     def simulate_all_data_changes(self):
         """模拟所有变量数据的动态变化"""
         from config import config
@@ -188,15 +144,12 @@ class VirtualDevice:
             temp_reg1 = (temp_bytes[2] << 8) | temp_bytes[3]
             self.holding_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = temp_reg0
             self.holding_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE + 1] = temp_reg1
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE] = temp_reg0
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_TEMPERATURE + 1] = temp_reg1
             
             # 变量2: 湿度 (int16) - 小幅度波动
             humidity_base = 60
             humidity_delta = random.randint(-3, 3)
             humidity_value = max(0, min(100, humidity_base + humidity_delta))
             self.holding_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = humidity_value & 0xFFFF
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_HUMIDITY] = humidity_value & 0xFFFF
             
             # 变量3: 功率 (float64) - 小幅度波动
             power_base = 1500.75
@@ -211,10 +164,6 @@ class VirtualDevice:
             self.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 1] = power_reg1
             self.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 2] = power_reg2
             self.holding_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 3] = power_reg3
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER] = power_reg0
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 1] = power_reg1
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 2] = power_reg2
-            self.input_registers._data[config.SLAVE_1_HOLDING_REG_POWER + 3] = power_reg3
             
             # 变量4: 累计电能 (int32) - 持续增长
             energy_addr = config.SLAVE_1_HOLDING_REG_ENERGY
@@ -236,8 +185,6 @@ class VirtualDevice:
             new_reg1 = (new_bytes[2] << 8) | new_bytes[3]
             self.holding_registers._data[energy_addr] = new_reg0
             self.holding_registers._data[energy_addr + 1] = new_reg1
-            self.input_registers._data[energy_addr] = new_reg0
-            self.input_registers._data[energy_addr + 1] = new_reg1
             
             # 变量5: 开关状态 (bool) - 偶尔变化
             if random.random() < 0.1:  # 10%的概率变化

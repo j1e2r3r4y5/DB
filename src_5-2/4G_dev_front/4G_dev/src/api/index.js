@@ -160,6 +160,46 @@ const api = {
             method: 'POST',
             data
         })
+    },
+
+    // ==========================================
+    // 方案2：JSON接口（新增）
+    // ==========================================
+
+    // 下发模组配置
+    sendModuleConfig(data) {
+        return request({
+            url: '/sendcod/module-config',
+            method: 'POST',
+            data
+        })
+    },
+
+    // 下发数据配置
+    sendDataConfig(data) {
+        return request({
+            url: '/sendcod/data-config',
+            method: 'POST',
+            data
+        })
+    },
+
+    // 查询数据配置
+    queryDataConfig(data) {
+        return request({
+            url: '/sendcod/query-config',
+            method: 'POST',
+            data
+        })
+    },
+
+    // 远程置数
+    remoteWrite(data) {
+        return request({
+            url: '/sendcod/remote-write',
+            method: 'POST',
+            data
+        })
     }
 }
 

@@ -35,10 +35,6 @@
                 <el-input v-model="form.stringLen" type="number" style="width:300px"
                     :disabled="!isStringType(form.dataType)" placeholder="仅字符串类型可填" />
             </el-form-item>
-            <el-form-item label="小数位数">
-                <el-input v-model="form.decimalDigits" style="width:300px" :disabled="true"
-                    placeholder="已移除，无需填写" />
-            </el-form-item>
         </el-form>
         <template #footer>
             <el-button @click="visible = false">取消</el-button>
@@ -73,8 +69,7 @@ const form = ref({
     modbusDevice: '',
     modbusAddr: '',
     data_len: '',
-    stringLen: '',
-    decimalDigits: ''
+    stringLen: ''
 })
 
 // 自动计算寄存器数量
@@ -118,8 +113,7 @@ function resetForm() {
         modbusNumber: '',
         modbusAddr: '',
         data_len: '',
-        stringLen: '',
-        decimalDigits: ''
+        stringLen: ''
     }
 }
 
@@ -136,8 +130,7 @@ async function handleSubmit() {
                 modbusDevice: Number(form.value.modbusDevice),
                 modbusAddr: Number(form.value.modbusAddr),
                 data_len: form.value.data_len,
-                stringLen: form.value.stringLen,
-                decimalDigits: Number(form.value.decimalDigits)
+                stringLen: form.value.stringLen
             }
         })
         emit('success')

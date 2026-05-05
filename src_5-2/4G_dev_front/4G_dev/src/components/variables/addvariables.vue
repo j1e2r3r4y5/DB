@@ -2,22 +2,22 @@
     <el-dialog v-model="visible" title="新建变量" width="500px" @close="resetForm">
         <el-form :model="form" label-width="100px">
             <!-- <el-form-item label="所属设备ID">
-                <el-select v-model="form.devID" placeholder="请选择设备" style="width:300px">
+                <el-select v-model="form.devID" placeholder="请选择设备" style="width:300px;">
                     <el-option v-for="item in deviceOptions" :key="item.value" :label="item.label"
                         :value="item.value" />
                 </el-select>
             </el-form-item> -->
             <el-form-item label="变量名">
-                <el-input v-model="form.varName" style="width:300px" />
+                <el-input v-model="form.varName" style="width:300px;" />
             </el-form-item>
             <el-form-item label="数据类型">
-                <el-select v-model="form.dataType" placeholder="请选择数据类型" style="width:300px">
+                <el-select v-model="form.dataType" placeholder="请选择数据类型" style="width:300px;">
                     <el-option v-for="opt in DataTypeOptions" :key="opt.value" :label="opt.label"
                         :value="opt.value" />
                 </el-select>
             </el-form-item>
             <el-form-item label="数据分区">
-                <el-select v-model="form.modbusType" placeholder="请选择数据分区" style="width:300px;">
+                <el-select v-model="form.modbusType" placeholder="请选择数据类型" style="width:300px;">
                     <el-option label="0区 线圈 (Coils)" value="0" />
                     <el-option label="1区 离散输入 (Discrete Inputs)" value="1" />
                     <el-option label="3区 输入寄存器 (Input Registers)" value="3" />
@@ -25,10 +25,10 @@
                 </el-select>
             </el-form-item>
             <el-form-item label="Modbus站号">
-                <el-input v-model="form.modbusNumber" type="number" style="width:300px" />
+                <el-input v-model="form.modbusNumber" type="number" style="width:300px;" />
             </el-form-item>
             <el-form-item label="数据地址">
-                <el-input v-model="form.modbusAddr" style="width:300px" />
+                <el-input v-model="form.modbusAddr" style="width:300px;" />
             </el-form-item>
             <el-form-item label="寄存器数量">
                 <el-input v-model="form.data_len" type="number" style="width:300px"
@@ -37,14 +37,8 @@
             </el-form-item>
             <el-form-item label="字符串长度">
                 <el-input v-model="form.stringLen" type="number" style="width:300px"
-                    :disabled="!isStringType(form.dataType)"
-                    placeholder="仅字符串类型可填" />
+                    :disabled="!isStringType(form.dataType)" placeholder="仅字符串类型可填" />
             </el-form-item>
-            <el-form-item label="小数位数">
-                <el-input v-model="form.decimalDigits" style="width:300px" :disabled="true"
-                    placeholder="已移除，无需填写" />
-            </el-form-item>
-
         </el-form>
         <template #footer>
             <el-button @click="visible = false">取消</el-button>
@@ -76,8 +70,7 @@ const form = ref({
     modbusNumber: '',
     modbusAddr: '',
     data_len: '',
-    stringLen: '',
-    decimalDigits: ''
+    stringLen: ''
 })
 
 // 自动计算寄存器数量
@@ -104,8 +97,7 @@ function resetForm() {
         modbusNumber: '',
         modbusAddr: '',
         data_len: '',
-        stringLen: '',
-        decimalDigits: ''
+        stringLen: ''
     }
 }
 // 监听 defaultDevId 变化，弹窗每次打开都同步
@@ -128,8 +120,7 @@ async function handleSubmit() {
                 modbusDevice: Number(form.value.modbusNumber),
                 modbusAddr: Number(form.value.modbusAddr),
                 data_len: form.value.data_len,
-                stringLen: form.value.stringLen,
-                decimalDigits: Number(form.value.decimalDigits)
+                stringLen: form.value.stringLen
             }
         })
         // console.log('新建变量数据', form.value.devID)

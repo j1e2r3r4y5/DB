@@ -1,5 +1,52 @@
-# Vue 3 + Vite
+# 前端界面 (Vue 3 + Vite)
 
-This template should help get you started developing with Vue 3 in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+## 项目概述
+基于 Vue 3 + ElementPlus 的工业物联网平台前端界面，支持：
+- 设备管理与配置
+- 变量管理与数据配置
+- 数据查询与可视化
+- 远程置数操作
 
-Learn more about IDE Support for Vue in the [Vue Docs Scaling up Guide](https://vuejs.org/guide/scaling-up/tooling.html#ide-support).
+## 项目结构
+```
+4G_dev/
+├── src/
+│   ├── api/
+│   │   └── index.js           # HTTP 接口封装（方案1 + 方案2）
+│   ├── components/
+│   │   ├── DeviceDownDialog.vue     # 设备配置弹窗（0x02）
+│   │   ├── variables/
+│   │   │   ├── Features.vue         # 变量管理（0x03/0x04）
+│   │   │   └── RemoteWriteDialog.vue # 远程置数（0x06）
+│   │   └── ...
+│   ├── router/              # 路由配置
+│   ├── view/                # 页面视图
+│   └── main.js              # 入口文件
+├── package.json
+└── vite.config.js
+```
+
+## 核心组件说明
+| 组件 | 功能 | 协议码 |
+|------|------|--------|
+| DeviceDownDialog.vue | 设备配置（发送模式、波特率） | 0x02 |
+| variables/Features.vue | 变量管理（查询、配置） | 0x03 / 0x04 |
+| variables/RemoteWriteDialog.vue | 远程置数（写入寄存器） | 0x06 |
+
+## API 说明
+所有接口封装在 `src/api/index.js`：
+- 方案2（推荐）：`sendModuleConfig`、`sendDataConfig`、`queryDataConfig`、`remoteWrite`
+- 方案1（保留）：`sendPayload`
+
+## 快速启动
+```bash
+npm install
+npm run dev
+# 默认端口 4325
+```
+
+## 技术栈
+- Vue 3 (Composition API)
+- Vite (构建工具)
+- ElementPlus (UI 框架)
+- Axios (HTTP 请求)

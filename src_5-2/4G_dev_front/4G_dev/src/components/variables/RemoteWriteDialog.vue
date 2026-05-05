@@ -75,30 +75,22 @@ function parseData() {
 
 async function submit() {
     if (!props.deviceId && !props.deviceSn) {
-        if (window.ElMessage) window.ElMessage.error('未选择设备')
+        ElMessage.error('未选择设备')
         return
     }
     const dataArr = parseData()
     if (dataArr.length === 0) {
-        if (window.ElMessage) window.ElMessage.warning('请输入要下发的数据')
+        ElMessage.warning('请输入要下发的数据')
         return
     }
     // 校验长度
     if (dataArr.length !== form.value.count) {
-        if (window.ElMessage) window.ElMessage.warning('数据数量需等于指定的数量')
+        ElMessage.warning('数据数量需等于指定的数量')
         return
     }
 
-    // 组包：按照你给出的协议（1字节功能码 1字节类型 2字节起始地址 2字节数量 数据）
-    const payload = []
-    payload.push(form.value.func & 0xff)
-    payload.push(form.value.type & 0xff)
-    // 起始地址 2字节，高位在前
-    payload.push((form.value.startAddr >> 8) & 0xff)
-    payload.push(form.value.startAddr & 0xff)
-    payload.push((form.value.count >> 8) & 0xff)
-    payload.push(form.value.count & 0xff)
-
+    // 构造values字节数组
+    const values = []
     if (form.value.type === 0) {
         // 每个数据按位打包，补齐到字节
         let byte = 0
@@ -108,29 +100,28 @@ async function submit() {
             byte |= (bit << bitIndex)
             bitIndex++
             if (bitIndex === 8) {
-                payload.push(byte)
+                values.push(byte)
                 byte = 0
                 bitIndex = 0
             }
         }
-        if (bitIndex > 0) payload.push(byte)
+        if (bitIndex > 0) values.push(byte)
     } else {
         // 每个数据 2 字节
         dataArr.forEach(n => {
-            payload.push((n >> 8) & 0xff)
-            payload.push(n & 0xff)
+            values.push((n >> 8) & 0xff)
+            values.push(n & 0xff)
         })
     }
 
-    // 【修复】将字节数组转换为十六进制字符串，与其他功能码保持一致
-    const hexStr = Array.from(payload).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
-    const params = {
-        serial: props.deviceSn,  // 【修复】后端用 serial，不是 deviceSn
-        code: hexStr             // 【修复】后端用 code，不是 payload
-    }
-
     try {
-        await api.downpayload(params)
+        await api.remoteWrite({
+            devSerial: props.deviceSn,
+            dataType: form.value.type,
+            startAddr: form.value.startAddr,
+            quantity: form.value.count,
+            values: values
+        })
         ElMessage.success('下发成功')
         emit('success')
         emit('update:visible', false)

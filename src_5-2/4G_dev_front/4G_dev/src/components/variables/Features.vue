@@ -68,9 +68,8 @@ const hexResult = computed(() => {
     return Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join(' ').toUpperCase()
 })
 
-// ===================== 下发函数：【改动4】新增全量校验 + 加载态控制 =====================
+// ===================== 下发函数：【迁移到方案2】使用 JSON接口 =====================
 async function handleSend() {
-    // 【改动】老代码无任何前端校验，新增2项必填校验，拦截无效下发
     if (!props.deviceSn) {
         ElMessage.error('设备序列号不能为空')
         return
@@ -79,35 +78,66 @@ async function handleSend() {
         ElMessage.error('请选择需要下发的变量')
         return
     }
-
-    loading.value = true // 【改动】开启加载状态，禁用按钮
+    
+    // 构造方案2数据格式
+    const entries = props.variableList.map(v => {
+        // 先按站号+分区分组计算起始地址和长度（与build04FunctionCode保持一致）
+        const addrs = props.variableList
+            .filter(item => item.modbusDevice === v.modbusDevice && item.modbusType === v.modbusType)
+            .map(item => parseInt(item.modbusAddr, 10))
+            .filter(n => !isNaN(n) && n >= 0)
+        if (addrs.length === 0) return null
+        
+        addrs.sort((a, b) => a - b)
+        const minAddr = addrs[0]
+        const maxAddr = addrs.at(-1)
+        const len = maxAddr - minAddr + 1
+        
+        return {
+            slaveAddr: Number(v.modbusDevice) || 1,
+            dataType: Number(v.modbusType) || 0,
+            startAddr: minAddr,
+            length: len
+        }
+    }).filter(Boolean)
+    
+    // 去重（相同站号+分区只留一个）
+    const uniqueEntries = []
+    const seen = new Set()
+    for (const entry of entries) {
+        const key = `${entry.slaveAddr}_${entry.dataType}`
+        if (!seen.has(key)) {
+            seen.add(key)
+            uniqueEntries.push(entry)
+        }
+    }
+    
+    loading.value = true
     try {
-        const code = build04FunctionCode(props.variableList)
-        const hexStr = Array.from(code).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase()
-
-        await api.downpayload({ serial: props.deviceSn, code: hexStr })  // 【修复】后端期望小写参数名
+        await api.sendDataConfig({
+            devSerial: props.deviceSn,
+            entries: uniqueEntries
+        })
         ElMessage.success('下发成功')
         emit('success')
         visible.value = false
     } catch (e) {
-        // 【改动】老代码仅提示下发失败，新增详细错误信息，方便排查
         ElMessage.error('下发失败：' + (e.message || '接口异常'))
         console.error('[04功能码下发] 错误：', e)
     } finally {
-        loading.value = false // 【改动】关闭加载状态
+        loading.value = false
     }
 }
 
-// ===================== 03功能码查询：【改动6】新增批量查询支持，参考DeviceDownDialog.vue实现 =====================
+// ===================== 03功能码查询：【迁移到方案2】使用 JSON接口 =====================
 async function handleQuery03() {
-    // 【改动】新增批量查询支持，参考DeviceDownDialog.vue的批量模式实现
     if (props.isBatch && props.rows && props.rows.length > 0) {
         // ==================== 批量查询模式 ====================
         queryLoading.value = true
         try {
             // 遍历所有选中设备，对每个设备下发03查询指令
             for (const dev of props.rows) {
-                await api.downpayload({ serial: dev.sn, code: '03' })
+                await api.queryDataConfig({ devSerial: dev.sn })
                 console.log(`[批量03查询] 设备: ${dev.sn} 查询指令已下发`)
             }
             ElMessage.success(`批量查询命令已下发，共 ${props.rows.length} 个设备`)
@@ -125,8 +155,7 @@ async function handleQuery03() {
         }
         queryLoading.value = true
         try {
-            // 【新增】发送03查询指令到后端，后端通过MQTT下发到设备
-            await api.downpayload({ serial: props.deviceSn, code: '03' })
+            await api.queryDataConfig({ devSerial: props.deviceSn })
             ElMessage.success('查询命令已下发')
         } catch (e) {
             ElMessage.error('查询失败：' + (e.message || '接口异常'))
