@@ -88,11 +88,15 @@ class ConfigManager:
         with self._lock:
             old_count = len(self._data_configs)
             self._data_configs = configs
-            logger.info(f"Data config updated: {old_count} -> {len(configs)} configs")
+            if len(configs) == 0:
+                logger.warning(f"Data config CLEARED: {old_count} -> 0 configs")
+            else:
+                logger.info(f"Data config updated: {old_count} -> {len(configs)} configs")
             for i, cfg in enumerate(configs):
                 logger.debug(f"  Config[{i}]: {cfg}")
 
         if self._on_data_config_callback:
+            logger.info("Calling data config update callback...")
             self._on_data_config_callback(configs)
 
     def clear_data_configs(self):
@@ -101,6 +105,9 @@ class ConfigManager:
             old_count = len(self._data_configs)
             self._data_configs = []
             logger.info(f"Data config cleared: {old_count} configs removed")
+        
+        if self._on_data_config_callback:
+            self._on_data_config_callback([])
 
     def set_on_data_config_callback(self, callback: callable):
         """Set callback for data config updates"""

@@ -13,6 +13,13 @@
             <el-button type="primary" size="small" style="margin-left: 24px;" @click="refresh">
                 刷新
             </el-button>
+            <el-checkbox v-model="showAllVariables" style="margin-left: 16px;" @change="refresh">
+                显示所有变量
+            </el-checkbox>
+        </div>
+        <div v-if="!showAllVariables && hasActiveVariables === false" style="margin-bottom: 12px; padding: 12px; background: #fff7e6; border: 1px solid #ffd591; border-radius: 4px;">
+            <el-icon style="color: #fa9d3b; margin-right: 8px;"><Warning /></el-icon>
+            <span style="color: #874a00;">还没有下发变量配置，请先去变量管理页面下发配置</span>
         </div>
         <el-table :data="variableList" style="width: 100%;" :header-cell-style="{ color: '#000', fontWeight: 'bold' }">
             <el-table-column prop="varName" label="变量名" min-width="120"></el-table-column>
@@ -41,6 +48,7 @@
 
 <script setup>
 import { ref, onMounted, watch, computed, onUnmounted } from 'vue'
+import { Warning } from '@element-plus/icons-vue'
 import api from '../../api'
 import DataDialog from './data_dialog.vue'
 import { formatDataType, DataType } from '../../utils/datatype'
@@ -58,12 +66,31 @@ const selectedDevID = ref(null)
 const deviceOptions = ref([])
 const variableList = ref([])
 const loading = ref(false)
+const showAllVariables = ref(false)
 const selectedDevice = computed(() =>
     deviceOptions.value.find(dev => dev.id === selectedDevID.value)
 )
 const historyDialogVisible = ref(false)
 const historyData = ref([])
 let timer = null
+
+// 读取当前设备的活跃变量ID列表
+function getActiveVariableIds(deviceId) {
+    if (!deviceId) return null
+    try {
+        const data = localStorage.getItem(`activeVariables_${deviceId}`)
+        return data ? JSON.parse(data) : null
+    } catch {
+        return null
+    }
+}
+
+// 判断是否有活跃变量
+const hasActiveVariables = computed(() => {
+    if (!selectedDevID.value) return null
+    const activeIds = getActiveVariableIds(selectedDevID.value)
+    return activeIds !== null
+})
 
 // 格式化显示值
 function formatDisplayValue(row) {
@@ -146,7 +173,25 @@ async function fetchVariableList(devID) {
     try {
         const res = await api.getvariables({ devID })
         const allVariables = res.data?.data?.variables || []
-        const filteredVariables = allVariables.filter(v => v.devID == devID)
+        let filteredVariables = allVariables.filter(v => v.devID == devID)
+
+        // 如果不是显示所有变量，过滤出活跃变量
+        if (!showAllVariables.value) {
+            const activeIds = getActiveVariableIds(devID)
+            console.log('[数据管理] 过滤变量:', {
+                devID,
+                allVariablesCount: filteredVariables.length,
+                activeIds,
+                allVariableIds: filteredVariables.map(v => ({ id: v.id, iD: v.iD, name: v.varName }))
+            })
+            if (activeIds !== null) {
+                filteredVariables = filteredVariables.filter(v => {
+                    const match = activeIds.includes(String(v.id)) || activeIds.includes(String(v.iD))
+                    return match
+                })
+            }
+            console.log('[数据管理] 过滤后变量数:', filteredVariables.length)
+        }
 
         if (!filteredVariables.length) {
             variableList.value = []
@@ -167,7 +212,7 @@ async function fetchVariableList(devID) {
         })
 
         const DevSerial = selectedDevice.value?.serial
-        console.log('fetchVariableList 分组信息:', { DevSerial, groups })
+        console.log('fetchVariableList 分组信息:', { DevSerial, groups, showAll: showAllVariables.value })
 
         // 存放所有返回的最新数据，key = slave_type_addr
         const latestDataMap = {}

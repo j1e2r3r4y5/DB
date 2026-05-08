@@ -2,6 +2,121 @@
 
 所有重要的项目变更都将记录在此文件中。
 
+## [1.7.0] - 2026-05-05
+
+### 变量管理页面全面重构
+
+#### 核心逻辑重构
+
+1. **下发逻辑改为基于选中变量**
+   - 改动：传 selectedRows（选中的变量）给 Features 组件，而不是所有变量
+   - 影响：只有用户勾选的变量才会被下发
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`
+
+2. **实现 Payload Key 变化检测机制（方案B）**
+   - 新增 getPayloadKey() 函数：计算选中变量的唯一标识（基于 id、站号、类型、地址、长度）
+   - 新增 getLastPayloadKey() / savePayloadKey()：localStorage 读写
+   - 新增 hasPayloadChanged 计算属性：比较当前 payload 与上次 payload
+   - 新增 payloadRefreshTrigger 响应式变量：强制刷新 hasPayloadChanged
+   - 优势：精确判断 payload 是否真的变化，不依赖后端 chengeFlag
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`
+
+3. **移除对后端 chengeFlag 的依赖**
+   - 改动："有修改操作"提示改用 hasPayloadChanged 判断
+   - 影响：变量名变化不会触发提示，地址/类型/长度变化才会
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`
+
+#### 空配置下发支持
+
+4. **允许下发空配置**
+   - 改动：移除按钮禁用条件中的 `selectedRows.length === 0`
+   - 改动：空配置时提示文字改为"将下发空配置"
+   - 改动：移除 Features 组件中的空配置检查
+   - 改动：添加空配置时的友好提示（"将下发空配置，设备将停止采集所有变量"）
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`、`Features.vue`
+
+5. **修复 build04FunctionCode 空配置处理**
+   - 问题：之前空配置时返回空数组，导致模拟器没收到清除指令
+   - 修复：即使空配置也生成有效的功能码04（0组）
+   - 格式：`04 00 00`（功能码 + 0组）
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+#### 05上报数据包长度计算增强
+
+6. **分组计算考虑变量实际占用长度**
+   - 修复：getGroupDetails 函数现在会计算每个变量的 endAddr = startAddr + data_len - 1
+   - 影响：分组范围从"最小地址"到"最大结束地址"，而不是"最大起始地址"
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+7. **分组详情显示**
+   - 新增：显示每个分组的详细信息（类型、站号、地址范围、寄存器数量、数据字节数）
+   - 新增：详细的计算过程展示（基础长度、每组头部+数据、总计）
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+#### UI 优化
+
+8. **变量表格增加寄存器数量列**
+   - 新增列：显示每个变量占用的寄存器/线圈数量
+   - 友好显示：线圈显示"X 个线圈"，寄存器显示"X 个寄存器"
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+9. **分区列显示友好文字**
+   - 改动：0→"线圈"，1→"离散输入"，3→"输入寄存器"，4→"保持寄存器"
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`
+
+10. **数量列使用合适的单位**
+    - 线圈/离散输入：显示 "X 位"
+    - 输入/保持寄存器：显示 "X 个寄存器"
+    - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+---
+
+## [1.6.0] - 2026-05-05
+
+### 空配置功能与数据管理页面显示优化
+
+#### 后端修复
+
+1. **修复SendDataConfig API的空配置验证问题**
+   - 问题：SendDataConfigReq中的Entries字段有`v:"required#数据项不能为空"`验证规则，导致空配置请求被拒绝
+   - 修复：移除了required验证规则，允许发送空配置
+   - 修改文件：`dev_back_end/dev/api/dev/v1/payload.go`
+
+#### 前端修复与增强
+
+2. **增强Features.vue的空配置处理**
+   - 添加了空配置时的二次确认弹窗，提示用户"确定要清空所有数据配置吗？设备将停止采集和上报数据"
+   - 添加了console.log调试信息，便于排查问题
+   - 在下发成功后保存activeVariableIds到localStorage
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+3. **优化data.vue的变量显示逻辑**
+   - 新增功能：数据管理页面默认只显示已下发配置的变量
+   - 新增功能：下发空配置时显示"暂无数据"
+   - 新增功能：可以勾选"显示所有变量"查看全部6个变量
+   - 添加了localStorage读取和保存activeVariableIds的功能
+   - 修改文件：`4G_dev_front/4G_dev/src/components/data/data.vue`
+
+#### 模拟器修复
+
+4. **修复config_manager.py的空配置处理**
+   - 问题：clear_data_configs清空配置后没有触发回调，导致数据调度器不知道配置已变更
+   - 修复：clear_data_configs现在会调用_on_data_config_updated回调
+   - 修改文件：`simulator_v3/core/config_manager.py`
+
+5. **优化data_config_handler.py的配置更新逻辑**
+   - 统一使用update_data_configs处理配置更新
+   - 确保每次下发新配置时，先清除旧配置再添加新配置（防止配置叠加）
+   - 修改文件：`simulator_v3/protocol/data_config_handler.py`
+
+#### 测试工具新增
+
+6. **新增空配置测试脚本**
+   - `test_empty_config.py`：直接通过MQTT发送空配置测试
+   - `test_backend_empty_config.py`：通过后端API发送空配置测试
+
+---
+
 ## [1.5.0] - 2026-05-04
 
 ### 发送模式UI修复与文档更新

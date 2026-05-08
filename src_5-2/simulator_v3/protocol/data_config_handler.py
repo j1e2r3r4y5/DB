@@ -65,7 +65,10 @@ class DataConfigHandler(ProtocolHandler):
         try:
             group_count = struct.unpack('>H', payload[1:3])[0]
 
-            logger.info(f"[DOWNLINK] Download data config: {group_count} groups")
+            logger.info(f"[DOWNLINK] Download data config: {group_count} groups, payload={payload.hex()}")
+
+            if group_count == 0:
+                logger.warning("[DOWNLINK] RECEIVED EMPTY CONFIG - WILL CLEAR ALL DATA COLLECTION")
 
             config_groups = []
             offset = 3
@@ -101,11 +104,14 @@ class DataConfigHandler(ProtocolHandler):
                 offset += 6
 
             if self.config_manager:
-                for config in config_groups:
-                    self.config_manager.add_data_config(config)
+                # 使用 update_data_configs 一次性更新（会自动触发回调）
+                self.config_manager.update_data_configs(config_groups)
 
             response = self._build_config_result(0x00)
-            logger.info(f"[UPLINK] Config result: success ({len(config_groups)} groups)")
+            if group_count == 0:
+                logger.info("[UPLINK] Config result: success (cleared all configs)")
+            else:
+                logger.info(f"[UPLINK] Config result: success ({len(config_groups)} groups)")
             return response
 
         except struct.error as e:

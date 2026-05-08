@@ -143,9 +143,31 @@
 | 功能 | 说明 |
 |------|------|
 | **0x03 查询** | 查询当前数据配置 |
-| **0x04 下发** | 下发新的数据配置（会经过后端优化器） |
+| **0x04 下发** | 下发选中的数据配置（只下发用户勾选的变量） |
+| **空配置下发** | 支持下发空配置（不勾选任何变量），会弹窗二次确认，清空所有数据采集配置，停止设备上报数据 |
+| **Payload Key 检测** | 基于 localStorage 缓存，精确判断 payload 是否变化（变量名变化不影响） |
+| **05长度计算** | 详细展示分组信息、寄存器数量、字节计算过程 |
+| **activeVariableIds** | 下发成功后会保存 activeVariableIds 到 localStorage，供数据管理页面使用 |
 | **接口** | api.queryDataConfig、api.sendDataConfig |
 | **文件位置** | 4G_dev_front/src/components/variables/Features.vue |
+
+### variables/variables.vue（变量列表）
+| 功能 | 说明 |
+|------|------|
+| **变量勾选** | 用户勾选变量后，点击"下发"只下发选中的变量 |
+| **有修改操作提示** | 基于 Payload Key 变化判断，变量名变化不会触发 |
+| **下发按钮** | 依赖 hasPayloadChanged 计算属性，payload 无变化时禁用 |
+| **空配置提示** | 未勾选变量时显示"将下发空配置" |
+| **文件位置** | 4G_dev_front/src/components/variables/variables.vue |
+
+### data/data.vue（数据管理）
+| 功能 | 说明 |
+|------|------|
+| **默认显示** | 只显示已下发配置的变量（从localStorage读取activeVariableIds） |
+| **空配置时** | 显示"暂无数据"提示 |
+| **显示所有变量** | 可以勾选"显示所有变量"查看全部6个变量 |
+| **数据显示** | 显示变量名称、数据类型、数据值、最新上传时间、操作等 |
+| **文件位置** | 4G_dev_front/src/components/data/data.vue |
 
 ### variables/RemoteWriteDialog.vue（远程置数）
 | 功能 | 说明 |
@@ -289,6 +311,10 @@ cd tools/deploy
 ## 📌 更新日志
 | 时间 | 说明 |
 |------|------|
+| 2026-05-05 | 修复SendDataConfig API的空配置验证问题，移除required规则 |
+| 2026-05-05 | 增强Features.vue的空配置处理，添加二次确认弹窗 |
+| 2026-05-05 | 优化data.vue的变量显示逻辑，默认只显示已下发配置的变量 |
+| 2026-05-05 | 修复config_manager.py的空配置处理，确保触发回调 |
 | 2026-05-04 | 全部前端组件迁移到方案2 |
 | 2026-05-04 | 新增数据配置优化器框架 |
 | 2026-05-04 | 整理项目结构，临时脚本归档到tests/和tools/目录 |

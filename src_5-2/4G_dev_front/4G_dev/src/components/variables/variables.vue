@@ -8,13 +8,15 @@
             <el-button type="primary" @click="fetchVariables">刷新</el-button>
             <el-button type="primary" @click="handleRecoveryVariable">撤销变更</el-button>
             <el-button type="primary" @click="showFeatures = true"
-                :disabled="!(currentDevice && currentDevice.chengeFlag === 1)">下发</el-button>
+                :disabled="!currentDevice || !hasPayloadChanged">下发</el-button>
             <!-- <el-button type="warning" @click="openRemoteWrite" :disabled="!currentDevice">远程置数</el-button> -->
 
         </div>
 
-        <span v-if="currentDevice && currentDevice.chengeFlag === 1"
-            style="color:#e53935;font-weight:bold;">有修改操作</span>
+        <span v-if="currentDevice && hasPayloadChanged"
+            style="color:#e53935;font-weight:bold;">
+            {{ selectedRows.length === 0 ? '将下发空配置' : '有修改操作' }}
+        </span>
         <div style="display: flex; align-items: center; margin-bottom: 12px;">
             <span style="margin-right: 8px; font-size: 14px; color: #333;">请选择设备</span>
             <Screening v-model="selectedDevID" />
@@ -48,7 +50,7 @@
             </el-table-column>
         </el-table>
         <Features v-model="showFeatures" :device-id="selectedDevID" :device-sn="currentDevice?.sn"
-            :variable-list="filteredVariableList" @success="fetchVariables" />
+            :variable-list="selectedRows" @success="handleFeaturesSuccess" />
         <RemoteWriteDialog v-model:visible="showRemoteWrite" :device-id="selectedDevID" :device-sn="currentDevice?.sn"
             @success="fetchVariables" />
         <Editingvar v-model="editDialogVisible" :variable="editRow" @success="fetchVariables" />
@@ -291,8 +293,109 @@ async function fetchVariablesByDevId(devId) {
 
 const tableRef = ref(null)
 const selectedRows = ref([])
+const payloadRefreshTrigger = ref(0) // 用于强制刷新 hasPayloadChanged
+
 function handleSelectionChange(val) {
     selectedRows.value = val
+}
+
+// 计算 payload 的唯一标识 key
+function getPayloadKey(selectedVariables, deviceId) {
+    if (!selectedVariables || selectedVariables.length === 0) {
+        return 'empty_' + (deviceId || '')
+    }
+    // 从 allVariableList 中获取最新的变量数据（确保使用编辑后的最新值）
+    const getLatestVariable = (varId) => {
+        return allVariableList.value.find(v => String(v.id) === String(varId))
+    }
+    // 获取有效的最新变量
+    const validVariables = selectedVariables
+        .map(v => getLatestVariable(v.id))
+        .filter(Boolean)
+    // 按变量ID排序，确保选中顺序不影响 key
+    const sorted = [...validVariables].sort((a, b) => {
+        const idA = a.id || ''
+        const idB = b.id || ''
+        return String(idA).localeCompare(String(idB))
+    })
+    // 提取影响 payload 的关键字段
+    const keyParts = sorted.map(v => {
+        return [
+            v.id || '',
+            v.modbusDevice || '',
+            v.modbusType || '',
+            v.modbusAddr || '',
+            v.data_len || ''
+        ].join(':')
+    })
+    return keyParts.join('|')
+}
+
+// 从 localStorage 读取上次下发的变量ID列表
+function getLastActiveVariableIds(deviceId) {
+    if (!deviceId) return null
+    try {
+        const data = localStorage.getItem(`activeVariables_${deviceId}`)
+        return data ? JSON.parse(data) : null
+    } catch {
+        return null
+    }
+}
+
+// 保存下发的变量ID列表到 localStorage
+function saveActiveVariableIds(deviceId, variableIds) {
+    if (!deviceId) return
+    try {
+        localStorage.setItem(`activeVariables_${deviceId}`, JSON.stringify(variableIds || []))
+    } catch {
+        // ignore
+    }
+}
+
+// 从 localStorage 读取上次下发的 payload key（保留向后兼容）
+function getLastPayloadKey(deviceId) {
+    if (!deviceId) return null
+    try {
+        return localStorage.getItem(`lastPayload_${deviceId}`)
+    } catch {
+        return null
+    }
+}
+
+// 保存 payload key 到 localStorage（保留向后兼容）
+function savePayloadKey(deviceId, key) {
+    if (!deviceId) return
+    try {
+        localStorage.setItem(`lastPayload_${deviceId}`, key)
+    } catch {
+        // ignore
+    }
+}
+
+// 检查是否有 payload 变化
+const hasPayloadChanged = computed(() => {
+    payloadRefreshTrigger.value // 引用这个响应式变量，确保其变化时会重新计算
+    if (!currentDevice.value) return false
+    const lastKey = getLastPayloadKey(currentDevice.value.id)
+    const currentKey = getPayloadKey(selectedRows.value, currentDevice.value.id)
+    // 如果 lastKey 不存在（首次下发），或者两个 key 不同，说明有变化
+    return !lastKey || lastKey !== currentKey
+})
+
+// 处理 Features 下发成功
+async function handleFeaturesSuccess(variables) {
+    // 先刷新变量列表确保有最新数据
+    await fetchVariables()
+    if (currentDevice.value) {
+        // 保存变量ID列表
+        const variableIds = (variables || []).map(v => String(v.id))
+        saveActiveVariableIds(currentDevice.value.id, variableIds)
+        
+        const key = getPayloadKey(variables, currentDevice.value.id)
+        savePayloadKey(currentDevice.value.id, key)
+        // 强制刷新 hasPayloadChanged
+        payloadRefreshTrigger.value++
+    }
 }
 // 回溯变量
 async function handleRecoveryVariable() {

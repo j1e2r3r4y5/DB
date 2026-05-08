@@ -179,6 +179,11 @@ class DTUSimulator:
     def _on_data_config_updated(self, configs):
         logger.info(f"Data config updated: {len(configs)} configs")
 
+        if len(configs) == 0:
+            logger.warning("CLEARING ALL DATA COLLECTION JOBS - DATA UPLOAD WILL STOP")
+        else:
+            logger.info(f"Creating {len(configs)} new data collection jobs")
+
         self.data_scheduler._jobs.clear()
 
         interval = self.config_manager.get_module_config().send_interval
@@ -258,6 +263,9 @@ class DTUSimulator:
                 try:
                     configs = self.config_manager.get_data_configs()
                     if not configs:
+                        # 每30秒输出一次日志，防止刷屏
+                        if int(time.time()) % 30 == 0:
+                            logger.debug("No data configs - skipping upload")
                         continue
 
                     current_time = time.time()
