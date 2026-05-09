@@ -1,0 +1,36 @@
+# https://goframe.org/docs/web/server-config-file-template
+server:
+  address:     ":8000"
+  openapiPath: "/api.json"
+  swaggerPath: "/swagger"
+
+# https://goframe.org/docs/core/glog-config
+logger:
+  level : "info"
+  stdout: true
+  path: "."
+
+# https://goframe.org/docs/core/gdb-config-file
+database:
+  default:
+    link: "mysql:root:123456@tcp(127.0.0.1:3306)/device?charset=utf8mb4&parseTime=True&loc=Local"
+
+mqtt:
+  brokerURI: "tcp://112.6.224.25:20042"
+  clientID: "dev_server"
+  username: ""
+  password: ""
+  cleanSession: true
+
+redis:
+  host: "127.0.0.1"
+  port: "6379"
+  # password: "123456"
+  limiter: 100
+  prefix: "Dev4G_"
+
+influxdb:
+  token: "Hv2o3YysgXHcLT_VSA1IAz2BV3u89Tn5c-Px9zSdbb_g7KcDriZF2EBHIL2DLbXtWLsftQiAVWug5SISKLgPmg=="
+  url: "http://127.0.0.1:8086"
+  org: "myorg"
+  bucket: "mybucket"
