@@ -20,7 +20,8 @@ ENV/
 *.so
 *.dylib
 main
-dev
+# NOTE: /dev anchors to root dir only, NOT dev_back_end/dev/
+/dev
 *.test
 *.out
 

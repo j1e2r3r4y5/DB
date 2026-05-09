@@ -41,9 +41,9 @@
 
 ## 📖 项目概述
 这是一个基于 **Modbus + MQTT** 的工业物联网设备管理平台，包含：
-- **后端服务**：Go + gogf 框架
-- **前端界面**：Vue3 + ElementPlus
-- **模拟设备**：Python 实现的 Modbus 设备模拟器
+- **后端服务**：Go + GoFrame (gogf) 框架
+- **前端界面**：Vue3 + ElementPlus + Vite
+- **模拟设备**：Python 实现的 DTU+Modbus 设备模拟器
 
 > 📚 **推荐阅读**：[完整需求设计文档](MD/01-需求设计/DTU+Modbus模拟器需求设计文档-完整版.md)
 
@@ -52,9 +52,10 @@
 ## 🏗️ 技术架构
 
 ### 后端
-- **框架**：GoFrame (gogf)
-- **数据库**：SQLite (关系型) + InfluxDB (时序型)
-- **通信**：MQTT (与设备通信)
+- **框架**：GoFrame (gogf) v2
+- **数据库**：MySQL 8.0 (关系型) + InfluxDB 2.x (时序型)
+- **通信**：MQTT (与设备通信，远程 Broker)
+- **缓存**：Redis
 
 ### 前端
 - **框架**：Vue3 + Vite
@@ -64,6 +65,7 @@
 ### 模拟设备
 - **语言**：Python3
 - **MQTT库**：paho-mqtt
+- **Modbus库**：自研 TCP Master/Slave
 
 ---
 
@@ -89,6 +91,8 @@
 
 ## 📌 功能码说明
 
+> ⚠️ **协议修正（v1.8.0）**：03/04/05 功能码中"2字节数据数量"字段实际含义为"报文总长度"，详见 [agreement.md](dev_back_end/dev/resource/配置文件/agreement.md)
+
 | 功能码 | 方向 | 说明 | 前端组件 | 后端接口 |
 |--------|------|------|----------|----------|
 | **0x00** | 上行 | 心跳包（设备 → 平台） | （自动处理） | payload.go |
@@ -98,6 +102,14 @@
 | **0x04** | 双向 | 数据配置下发/结果 | Features.vue | /sendcod/data-config |
 | **0x05** | 上行 | 数据上报（设备 → 平台） | （自动处理） | payload.go |
 | **0x06** | 双向 | 远程置数/结果 | RemoteWriteDialog.vue | /sendcod/remote-write |
+
+### 协议结构（v1.8.0 后）
+
+| 功能码 | 报文结构 |
+|--------|---------|
+| 03 上发 | 1字节功能码 + **2字节报文总长度** + N×6字节数据项 |
+| 04 下发 | 1字节功能码 + **2字节报文总长度** + N×6字节数据项 |
+| 05 上发 | 1字节功能码 + **2字节报文总长度** + 变长数据项列表 |
 
 ---
 
@@ -205,21 +217,32 @@
 
 ### 2. 上行（设备 → 平台）示例：数据上报（0x05）
 ```
-模拟设备（simulator_v3）
+ML307C设备 / 模拟器（simulator_v3）
   ↓
-  定时 30s 采集 Modbus 数据
+  定时采集 Modbus 数据（间隔由0x04配置）
   ↓
-  构造数据包（0x05） → MQTT 发送到 /dtu/{设备序列号}/up
+  构造数据包（0x05 + 报文总长度 + 变长数据项）→ MQTT(QoS2) 发送到 /dtu/{序列号}/up
   ↓
   后端（mqtt.go → messageHandler）
   ↓
   payload.go → PayloadHandler
   ↓
-  解析功能码 0x05 → 解析变量数据
+  解析功能码 0x05 → 按变量缓存表匹配解析
   ↓
-  写入 InfluxDB（DataItem）
+  写入 InfluxDB（DataItem measurement）
   ↓
-  前端（刷新页面）→ 显示最新数据
+  前端（轮询刷新）→ 调用 /dataquery → 显示最新数据
+```
+
+### 3. 离线检测机制（v1.8.0 新增）
+```
+后台定时任务（每60秒执行）:
+  ↓
+  检查所有设备: dev_status=1 AND latest_online < 当前时间-3分钟
+  ↓
+  符合条件的设备 → 更新 dev_status=0（离线）
+  ↓
+  前端刷新 → 显示设备离线
 ```
 
 ---
@@ -248,7 +271,9 @@ python main.py
 ```
 
 ### 4. MQTT Broker
-确保本地有 MQTT Broker 运行在 1883 端口（比如 EMQX 或 Mosquitto）
+默认连接远程 MQTT Broker（112.6.224.25:20042），也支持本地部署。
+
+> 注意：生产环境使用远程 Broker，需确保网络可达。
 
 ---
 
@@ -279,10 +304,12 @@ cd tools/deploy
 ### 后端
 | 文件 | 说明 |
 |------|------|
-| internal/logic/payload.go | 协议解析与处理（上行） |
-| internal/logic/sendcod.go | 协议编码与发送（下行，方案2） |
+| internal/logic/payload.go | 协议解析与处理（上行，含解析增强逻辑 WriteEnhancedDataToInflux） |
+| internal/logic/sendcod.go | 协议编码与发送（下行，方案2）、PayloadOptimizer 优化器 |
 | internal/logic/mqtt.go | MQTT 连接管理 |
-| internal/controller/payload.go | HTTP 接口实现 |
+| internal/controller/payload.go | HTTP 接口实现（含 InfluxDB 查询） |
+| internal/cmd/cmd.go | 启动入口、离线检测定时任务 |
+| utility/datatype_codec.go | 数据类型编解码（bool/int16/int32/float32/float64/string） |
 | api/dev/v1/payload.go | API 接口定义 |
 
 ### 前端
@@ -311,6 +338,7 @@ cd tools/deploy
 ## 📌 更新日志
 | 时间 | 说明 |
 |------|------|
+| 2026-05-09 | **v1.8.0** 协议修正（03/04/05"数据数量"→"报文总长度"）、新增离线检测机制、修复ParseAndWriteData除零问题 |
 | 2026-05-05 | 修复SendDataConfig API的空配置验证问题，移除required规则 |
 | 2026-05-05 | 增强Features.vue的空配置处理，添加二次确认弹窗 |
 | 2026-05-05 | 优化data.vue的变量显示逻辑，默认只显示已下发配置的变量 |

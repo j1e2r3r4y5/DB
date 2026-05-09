@@ -14,9 +14,13 @@ class Config:
     MQTT_QOS_UP = 2
     MQTT_QOS_DOWN = 0
 
-    DEVICE_SERIAL = os.getenv("DEVICE_SERIAL", "A1B2C3D4")
+    DEVICE_SERIAL = os.getenv("DEVICE_SERIAL", "078AA6C46691")
     UP_TOPIC = f"/dtu/{DEVICE_SERIAL}/up"
     DOWN_TOPIC = f"/dtu/{DEVICE_SERIAL}/down"
+
+    SANDBOX_UP_TOPIC = f"/dtu/{DEVICE_SERIAL}/sandbox/up"
+    SANDBOX_DOWN_TOPIC = f"/dtu/{DEVICE_SERIAL}/sandbox/down"
+    SANDBOX_STRATEGY = "random"
 
     MODBUS_HOST = os.getenv("MODBUS_HOST", "127.0.0.1")
     MODBUS_PORT = int(os.getenv("MODBUS_PORT", "502"))

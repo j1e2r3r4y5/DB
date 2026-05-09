@@ -200,6 +200,24 @@ const api = {
             method: 'POST',
             data
         })
+    },
+
+    // 查询沙箱数据
+    sandboxDataQuery(data) {
+        return request({
+            url: '/sandbox/dataquery',
+            method: 'POST',
+            data
+        })
+    },
+
+    // 批量导入变量
+    batchAddvariable(data) {
+        return request({
+            url: '/batch-addvariable',
+            method: 'POST',
+            data
+        })
     }
 }
 

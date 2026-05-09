@@ -55,7 +55,7 @@ try {
     Pop-Location
 }
 
-$SimDir = Join-Path $DeployRoot "simulator_v3"
+$SimDir = Join-Path $DeployRoot "simulator_v1536"
 Write-Host "启动模拟器..." -ForegroundColor Yellow
 Push-Location $SimDir
 try {

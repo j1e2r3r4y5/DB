@@ -1,56 +1,91 @@
 <template>
     <div class="device-table-wrapper">
-        <!-- <div style="font-size: 18px; font-weight: bold; margin-bottom: 12px;">变量表管理</div> -->
         <div class="action-buttons"
             style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:12px;">
             <el-button type="default" @click="goBack">返回</el-button>
             <el-button type="primary" @click="dialogVisible = true">新建变量</el-button>
-            <el-button type="primary" @click="fetchVariables">刷新</el-button>
+            <el-button type="primary" @click="fetchVariables(selectedDevID.value)">刷新</el-button>
             <el-button type="primary" @click="handleRecoveryVariable">撤销变更</el-button>
             <el-button type="primary" @click="showFeatures = true"
-                :disabled="!currentDevice || !hasPayloadChanged">下发</el-button>
-            <!-- <el-button type="warning" @click="openRemoteWrite" :disabled="!currentDevice">远程置数</el-button> -->
-
+                :disabled="!currentDevice">
+                下发</el-button>
+            <el-button type="success" @click="showImportDialog = true" :disabled="!currentDevice">
+                导入变量</el-button>
+            <el-button type="danger" @click="handleBatchDelete" :disabled="selectedIds.size === 0">
+                批量删除{{ selectedIds.size > 0 ? `(${selectedIds.size})` : '' }}</el-button>
+            <el-checkbox v-model="selectAllAcrossPages" :indeterminate="isIndeterminate" @change="toggleSelectAll" style="margin-left: 8px;">
+                全选所有变量{{ displayList.length > 0 ? ` (${selectedIds.size}/${displayList.length})` : '' }}
+            </el-checkbox>
         </div>
 
-        <span v-if="currentDevice && hasPayloadChanged"
+        <span v-if="currentDevice && _hasChanged"
             style="color:#e53935;font-weight:bold;">
-            {{ selectedRows.length === 0 ? '将下发空配置' : '有修改操作' }}
+            {{ selectedIds.size === 0 ? '将下发空配置' : '有修改操作' }}
         </span>
         <div style="display: flex; align-items: center; margin-bottom: 12px;">
             <span style="margin-right: 8px; font-size: 14px; color: #333;">请选择设备</span>
             <Screening v-model="selectedDevID" />
         </div>
-        <el-table :data="filteredVariableList" style="width: 100%;" v-loading="loading" ref="tableRef"
-            @selection-change="handleSelectionChange">
-            <el-table-column type="selection" width="55" />
-            <el-table-column prop="varName" label="变量名" min-width="120"></el-table-column>
-            <el-table-column prop="dataType" label="数据类型" min-width="100" :formatter="dataTypeFormatter" />
-            <el-table-column prop="modbusType" label="数据分区" min-width="100" :formatter="dataTypeFormatter" />
-            <el-table-column prop="modbusDevice" label="Modbus站号" min-width="100"></el-table-column>
-            <el-table-column prop="modbusAddr" label="数据地址" min-width="100"></el-table-column>
+
+        <!-- 分页表格：固定高度 + 分页 -->
+        <el-table 
+            :data="pagedList" 
+            style="width: 100%;" 
+            v-loading="loading" 
+            ref="tableRef"
+            @selection-change="handleSelectionChange"
+            row-key="id"
+            height="550"
+        >
+            <el-table-column type="selection" width="55" reserve-selection />
+            <el-table-column prop="varName" label="变量名" min-width="160">
+                <template #default="scope">
+                    <span>{{ scope.row.varName }}</span>
+                    <el-tag v-if="scope.row.scope === 'sandbox'" size="small" type="warning" style="margin-left: 6px;">沙箱</el-tag>
+                </template>
+            </el-table-column>
+            <el-table-column prop="dataType" label="数据类型" min-width="100">
+                <template #default="scope">
+                    {{ getDataTypeLabel(scope.row.dataType) }}
+                </template>
+            </el-table-column>
+            <el-table-column prop="modbusType" label="数据分区" min-width="100">
+                <template #default="scope">
+                    {{ getModbusTypeLabel(scope.row.modbusType) }}
+                </template>
+            </el-table-column>
+            <el-table-column prop="modbusDevice" label="Modbus站号" min-width="100" />
+            <el-table-column prop="modbusAddr" label="数据地址" min-width="100" />
             <el-table-column prop="stringLen" label="字符串长度" min-width="100">
                 <template #default="scope">
-                    {{ (!scope.row.stringLen && scope.row.stringLen !== 0) ? '-' : (scope.row.stringLen === 0 ? '-' :
-                        scope.row.stringLen) }}
+                    {{ (!scope.row.stringLen && scope.row.stringLen !== 0) ? '-' : scope.row.stringLen }}
                 </template>
             </el-table-column>
-            <el-table-column prop="decimalDigits" label="小数位数" min-width="100">
-                <template #default="scope">
-                    {{ (!scope.row.decimalDigits && scope.row.decimalDigits !== 0) ? '-' : (scope.row.decimalDigits ===
-                        0
-                        ? '-' : scope.row.decimalDigits) }}
-                </template>
-            </el-table-column>
-            <el-table-column label="操作" width="120">
+            <el-table-column label="操作" width="120" fixed="right">
                 <template #default="scope">
                     <el-button link class="el-btn" @click="handleEditVariable(scope.row)">编辑</el-button>
                     <el-button link class="el-btn" @click="handleDeleteClick(scope.row)">删除</el-button>
                 </template>
             </el-table-column>
         </el-table>
+
+        <div style="display: flex; justify-content: center; margin-top: 12px;">
+            <el-pagination
+                v-model:current-page="page"
+                :page-size="pageSize"
+                :total="displayList.length"
+                layout="total, prev, pager, next, sizes"
+                :page-sizes="[50, 100, 200, 500]"
+                @current-change="onPageChange"
+                @size-change="onPageChange"
+                background
+            />
+        </div>
+
         <Features v-model="showFeatures" :device-id="selectedDevID" :device-sn="currentDevice?.sn"
-            :variable-list="selectedRows" @success="handleFeaturesSuccess" />
+            :variable-list="selectedRowsArray" @success="handleFeaturesSuccess" />
+        <ImportVariablesDialog v-model="showImportDialog" :device-id="selectedDevID" :device-sn="currentDevice?.sn"
+            @success="fetchVariables" />
         <RemoteWriteDialog v-model:visible="showRemoteWrite" :device-id="selectedDevID" :device-sn="currentDevice?.sn"
             @success="fetchVariables" />
         <Editingvar v-model="editDialogVisible" :variable="editRow" @success="fetchVariables" />
@@ -62,11 +97,27 @@
                 <el-button type="danger" @click="confirmDelete">删除</el-button>
             </template>
         </el-dialog>
+        <el-dialog v-model="batchDeleteDialogVisible" title="确认批量删除" width="450px">
+            <div v-if="!batchDeleteLoading" style="font-size: 16px;">
+                确定要删除选中的 <strong style="color:#f56c6c;">{{ selectedIds.size }}</strong> 个变量吗？
+            </div>
+            <div v-else style="font-size: 16px;">
+                正在删除... <strong>{{ batchDeleteProgress }}/{{ batchDeleteTotal }}</strong>
+                <el-progress :percentage="Math.round((batchDeleteProgress / batchDeleteTotal) * 100)" style="margin-top:12px;" />
+            </div>
+            <div style="font-size: 13px; color:#909399; margin-top:8px;">此操作不可撤销</div>
+            <template #footer>
+                <el-button @click="batchDeleteDialogVisible = false" :disabled="batchDeleteLoading">取消</el-button>
+                <el-button type="danger" @click="confirmBatchDelete" :loading="batchDeleteLoading" :disabled="batchDeleteLoading">
+                    {{ batchDeleteLoading ? '删除中...' : '删除' }}
+                </el-button>
+            </template>
+        </el-dialog>
     </div>
 </template>
 
 <script setup>
-import { ref, onMounted, computed, inject, watch } from 'vue'
+import { ref, onMounted, computed, inject, watch, markRaw, nextTick } from 'vue'
 const props = defineProps({ initDevId: [String, Number] })
 const emit = defineEmits(['back-to-device'])
 
@@ -79,73 +130,94 @@ import AddVariables from './addvariables.vue'
 import Editingvar from './Editingvar.vue'
 import Features from './Features.vue'
 import RemoteWriteDialog from './RemoteWriteDialog.vue'
+import ImportVariablesDialog from './ImportVariablesDialog.vue'
+
 const showFeatures = ref(false)
 const showRemoteWrite = ref(false)
+const showImportDialog = ref(false)
 const deviceList = inject('deviceList', ref([]))
 const currentDevice = computed(() =>
     deviceList.value.find(d => String(d.id) === String(selectedDevID.value))
 )
-const selectedDevID = ref('1') // 默认1
-const filteredVariableList = computed(() =>
-    allVariableList.value
-        .filter(v => String(v.devID) === String(selectedDevID.value))
-        .sort((a, b) => {
-            // 1. 先按 modbusDevice（站号）升序
-            const deviceA = Number(a.modbusDevice) || 0
-            const deviceB = Number(b.modbusDevice) || 0
-            if (deviceA !== deviceB) return deviceA - deviceB
+const selectedDevID = ref('1')
 
-            // 2. 再按 modbusType（数据分区）升序
-            const typeA = Number(a.modbusType) || 0
-            const typeB = Number(b.modbusType) || 0
-            if (typeA !== typeB) return typeA - typeB
+// 简化数据结构，减少响应式开销
+let _allData = []
+const displayList = ref([])
 
-            // 3. 最后按 modbusAddr（数据地址）升序
-            const addrA = Number(a.modbusAddr) || 0
-            const addrB = Number(b.modbusAddr) || 0
-            return addrA - addrB
-        })
-)
 const deleteDialogVisible = ref(false)
 const deleteTarget = ref(null)
-// const configDialogVisible = ref(false)
-// const configRow = ref(null)
-const dataTypeMap = {
-		'0': '布尔值',
-		'1': 'int16',
-		'2': 'int32',
-		'3': 'float32',
-		'4': 'float64',
-		'5': '字符串'
-	}
+const batchDeleteDialogVisible = ref(false)
+const batchDeleteLoading = ref(false)
+const batchDeleteProgress = ref(0)
+const batchDeleteTotal = ref(0)
 
-function dataTypeFormatter(row, column, cellValue) {
-    if (column.property === 'dataType') {
-        // 先检查是否有新类型映射
-        if (dataTypeMap[cellValue]) {
-            return dataTypeMap[cellValue];
+// 全选跨页
+const selectAllAcrossPages = ref(false)
+const isIndeterminate = ref(false)
+function toggleSelectAll(checked) {
+    if (checked) {
+        displayList.value.forEach(row => selectedIds.add(row.id))
+        selectedRowsArray.value = displayList.value
+        isIndeterminate.value = false
+    } else {
+        selectedIds.clear()
+        selectedRowsArray.value = []
+        isIndeterminate.value = false
+    }
+    // 同步表格UI
+    nextTick(() => {
+        if (tableRef.value) {
+            pagedList.value.forEach(row => {
+                tableRef.value.toggleRowSelection(row, selectedIds.has(row.id), false)
+            })
         }
-        // 兼容旧数据类型的显示（给用户提示这是旧格式）
-        const oldTypeMap = {
-            '1': '整数 (旧)',
-            '2': '浮点数 (旧)',
-            '3': '定点数 (旧)',
-            '4': '字符串 (旧)'
-        };
-        return oldTypeMap[cellValue] || cellValue || '-';
-    }
-    if (column.property === 'modbusType') {
-        // 标准 Modbus 协议分区定义
-        const modbusTypeMap = {
-            '0': '0区 线圈 (Coils)',
-            '1': '1区 离散输入 (Discrete Inputs)',
-            '3': '3区 输入寄存器 (Input Registers)',
-            '4': '4区 保持寄存器 (Holding Registers)'
-        };
-        return modbusTypeMap[cellValue] || cellValue || '-';
-    }
-    return cellValue || '-';
+    })
 }
+
+// 分页状态
+const page = ref(1)
+const pageSize = ref(50)
+const pagedList = computed(() => {
+    const start = (page.value - 1) * pageSize.value
+    return displayList.value.slice(start, start + pageSize.value)
+})
+function onPageChange() {
+    // 切换页后刷新当前页勾选框
+    nextTick(() => {
+        if (tableRef.value && selectedIds.size > 0) {
+            pagedList.value.forEach(row => {
+                tableRef.value.toggleRowSelection(row, selectedIds.has(row.id), false)
+            })
+        }
+    })
+}
+
+// 静态映射，避免每次都重新创建
+const dataTypeMap = markRaw({
+    '0': '布尔值',
+    '1': 'int16',
+    '2': 'int32',
+    '3': 'float32',
+    '4': 'float64',
+    '5': '字符串'
+})
+const modbusTypeMap = markRaw({
+    '0': '0区 线圈 (Coils)',
+    '1': '1区 离散输入 (Discrete Inputs)',
+    '3': '3区 输入寄存器 (Input Registers)',
+    '4': '4区 保持寄存器 (Holding Registers)'
+})
+
+// 简单的格式化函数
+function getDataTypeLabel(val) {
+    return dataTypeMap[val] || val || '-'
+}
+function getModbusTypeLabel(val) {
+    return modbusTypeMap[val] || val || '-'
+}
+
+// 删除相关
 async function confirmDelete() {
     if (!deleteTarget.value) return
     try {
@@ -170,6 +242,7 @@ async function confirmDelete() {
     deleteDialogVisible.value = false
     deleteTarget.value = null
 }
+
 const editDialogVisible = ref(false)
 const editRow = ref(null)
 
@@ -183,42 +256,84 @@ function handleDeleteClick(row) {
     deleteDialogVisible.value = true
 }
 
-function openRemoteWrite() {
-    console.log('openRemoteWrite clicked, currentDevice=', currentDevice.value)
-    showRemoteWrite.value = true
-    console.log('showRemoteWrite after set =', showRemoteWrite.value)
+function handleBatchDelete() {
+    if (selectedIds.size === 0) return
+    batchDeleteDialogVisible.value = true
 }
 
-const variableList = ref([])
-const allVariableList = ref([])
-const loading = ref(false)
-const dialogVisible = ref(false) // 控制新建变量对话框的显示
-async function fetchVariables() {
-    loading.value = true
+async function confirmBatchDelete() {
+    if (selectedIds.size === 0) return
+    
+    const rows = displayList.value.filter(r => selectedIds.has(r.id))
+    batchDeleteTotal.value = rows.length
+    batchDeleteProgress.value = 0
+    batchDeleteLoading.value = true
+    
+    let successCount = 0
+    let failCount = 0
+    const concurrency = 10 // 增大并发数，提高速度
+    
     try {
-        // 先获取变量列表
-        const res = await api.getvariables({})
-        if (res.data && res.data.data && Array.isArray(res.data.data.variables)) {
-            const list = res.data.data.variables.map(item => ({
-                id: item.iD ?? item.id ?? '',
-                devID: item.devID ?? '',
-                varName: item.varName ?? '',
-                dataType: item.dataType ?? '',
-                modbusType: item.modbusType ?? '',
-                modbusDevice: item.modbusDevice ?? '',
-                modbusAddr: item.modbusAddr ?? '',
-                data_len: item.data_len ?? item.dataLen ?? '',
-                stringLen: item.stringLen ?? '',
-                decimalDigits: item.decimalDigits ?? ''
-            }))
-            allVariableList.value = list
-            variableList.value = list
-        } else {
-            allVariableList.value = []
-            variableList.value = []
+        // 并发删除，带进度更新
+        for (let i = 0; i < rows.length; i += concurrency) {
+            const batch = rows.slice(i, i + concurrency)
+            const promises = batch.map(async (variable) => {
+                try {
+                    await api.deletevariable({
+                        In: {
+                            id: variable.id,
+                            devID: variable.devID,
+                            varName: variable.varName,
+                            dataType: variable.dataType,
+                            modbusType: variable.modbusType,
+                            modbusDevice: variable.modbusDevice,
+                            modbusAddr: variable.modbusAddr,
+                            data_len: variable.data_len,
+                            stringLen: variable.stringLen,
+                        }
+                    })
+                    return { success: true }
+                } catch (e) {
+                    return { success: false }
+                }
+            })
+            
+            const results = await Promise.all(promises)
+            results.forEach(r => {
+                if (r.success) successCount++
+                else failCount++
+            })
+            
+            // 减少UI更新频率
+            batchDeleteProgress.value = Math.min(i + concurrency, rows.length)
         }
+        
+        if (failCount === 0) {
+            if (window.ElMessage) window.ElMessage.success(`批量删除成功：共 ${successCount} 个变量`)
+        } else {
+            if (window.ElMessage) window.ElMessage.warning(`批量删除完成：成功 ${successCount} 个，失败 ${failCount} 个`)
+        }
+        
+        // 清空选中状态
+        selectedIds.clear()
+        selectedRowsArray.value = []
+        fetchVariables()
+    } finally {
+        batchDeleteLoading.value = false
+        batchDeleteDialogVisible.value = false
+    }
+}
 
-        // 只获取设备的修改标志和成功标志
+// 数据加载
+const loading = ref(false)
+const dialogVisible = ref(false)
+let deviceListFetched = false
+
+async function fetchDeviceListOnce() {
+    if (deviceListFetched && deviceList.value && deviceList.value.length > 0) {
+        return
+    }
+    try {
         const deviceRes = await api.getDeviceList()
         let rawList = []
         if (deviceRes.data && deviceRes.data.data && Array.isArray(deviceRes.data.data.devicelist)) {
@@ -232,18 +347,70 @@ async function fetchVariables() {
             chengeFlag: item.chengeFlag ?? 0,
             successFlag: item.successFlag ?? 0
         }))
+        deviceListFetched = true
     } catch (e) {
-        allVariableList.value = []
-        variableList.value = []
+        console.error('获取设备列表失败:', e)
+    }
+}
+
+async function fetchVariables(devId) {
+    loading.value = true
+    try {
+        let res
+        if (devId) {
+            res = await api.getvarbydeviceid({ deviceId: devId })
+        } else {
+            res = await api.getvariables({})
+        }
+        let list = []
+        if (res.data && res.data.data && Array.isArray(res.data.data.variables)) {
+            list = res.data.data.variables
+        } else if (res.data && Array.isArray(res.data.variables)) {
+            list = res.data.variables
+        }
+        if (devId) {
+            _allData = (list || []).map(item => markRaw({
+                id: item.iD ?? item.id ?? '',
+                devID: item.devID ?? devId,
+                varName: item.varName ?? '',
+                dataType: item.dataType ?? '',
+                modbusType: item.modbusType ?? '',
+                modbusDevice: item.modbusDevice ?? '',
+                modbusAddr: item.modbusAddr ?? '',
+                data_len: item.data_len ?? item.dataLen ?? '',
+                stringLen: item.stringLen ?? '',
+                decimalDigits: item.decimalDigits ?? '',
+                scope: item.scope ?? 'production'
+            }))
+        } else {
+            _allData = (list || []).map(item => markRaw({
+                id: item.iD ?? item.id ?? '',
+                devID: item.devID ?? '',
+                varName: item.varName ?? '',
+                dataType: item.dataType ?? '',
+                modbusType: item.modbusType ?? '',
+                modbusDevice: item.modbusDevice ?? '',
+                modbusAddr: item.modbusAddr ?? '',
+                data_len: item.data_len ?? item.dataLen ?? '',
+                stringLen: item.stringLen ?? '',
+                decimalDigits: item.decimalDigits ?? '',
+                scope: item.scope ?? 'production'
+            }))
+        }
+        updateDisplayList()
+        await fetchDeviceListOnce()
+    } catch (e) {
+        _allData = []
+        updateDisplayList()
+        console.error('获取变量列表失败:', e)
     }
     loading.value = false
 }
 
-// 根据设备ID拉取变量（使用按设备ID的接口）
 async function fetchVariablesByDevId(devId) {
     if (!devId) {
-        allVariableList.value = []
-        variableList.value = []
+        _allData = []
+        updateDisplayList()
         return
     }
     loading.value = true
@@ -255,7 +422,7 @@ async function fetchVariablesByDevId(devId) {
         } else if (res.data && Array.isArray(res.data.variables)) {
             list = res.data.variables
         }
-        const mapped = (list || []).map(item => ({
+        _allData = (list || []).map(item => markRaw({
             id: item.iD ?? item.id ?? '',
             devID: item.devID ?? devId,
             varName: item.varName ?? '',
@@ -265,138 +432,137 @@ async function fetchVariablesByDevId(devId) {
             modbusAddr: item.modbusAddr ?? '',
             data_len: item.data_len ?? item.dataLen ?? '',
             stringLen: item.stringLen ?? '',
-            decimalDigits: item.decimalDigits ?? ''
+            decimalDigits: item.decimalDigits ?? '',
+            scope: item.scope ?? 'production'
         }))
-        allVariableList.value = mapped
-        variableList.value = mapped
-
-        // 更新设备的 chengeFlag / successFlag，类似原 fetchVariables 中的做法
-        const deviceRes = await api.getDeviceList()
-        let rawList = []
-        if (deviceRes.data && deviceRes.data.data && Array.isArray(deviceRes.data.data.devicelist)) {
-            rawList = deviceRes.data.data.devicelist
-        } else if (deviceRes.data && Array.isArray(deviceRes.data.devicelist)) {
-            rawList = deviceRes.data.devicelist
-        }
-        deviceList.value = rawList.map(item => ({
-            id: item.id,
-            sn: item.DevSerial || item.serial || '',
-            chengeFlag: item.chengeFlag ?? 0,
-            successFlag: item.successFlag ?? 0
-        }))
+        updateDisplayList()
+        await fetchDeviceListOnce()
     } catch (e) {
-        allVariableList.value = []
-        variableList.value = []
+        _allData = []
+        updateDisplayList()
+        console.error('获取变量列表失败:', e)
     }
     loading.value = false
 }
 
+// 更新显示列表，只在必要时重新计算
+function updateDisplayList() {
+    const filtered = _allData.filter(v => String(v.devID) === String(selectedDevID.value))
+    filtered.sort((a, b) => {
+        // 正常变量排前面，沙箱变量排后面
+        const scopeA = a.scope === 'sandbox' ? 1 : 0
+        const scopeB = b.scope === 'sandbox' ? 1 : 0
+        if (scopeA !== scopeB) return scopeA - scopeB
+        const deviceA = Number(a.modbusDevice) || 0
+        const deviceB = Number(b.modbusDevice) || 0
+        if (deviceA !== deviceB) return deviceA - deviceB
+        const typeA = Number(a.modbusType) || 0
+        const typeB = Number(b.modbusType) || 0
+        if (typeA !== typeB) return typeA - typeB
+        const addrA = Number(a.modbusAddr) || 0
+        const addrB = Number(b.modbusAddr) || 0
+        return addrA - addrB
+    })
+    displayList.value = filtered
+    page.value = 1
+}
+
+// 选择管理：用 Set 代替数组，速度更快
+const selectedIds = new Set()
+const selectedRowsArray = ref([])
 const tableRef = ref(null)
-const selectedRows = ref([])
-const payloadRefreshTrigger = ref(0) // 用于强制刷新 hasPayloadChanged
+let selectionTimeout = null
 
+// 防抖处理选择变化，跨分页维护选中状态
 function handleSelectionChange(val) {
-    selectedRows.value = val
+    if (selectionTimeout) {
+        clearTimeout(selectionTimeout)
+    }
+    selectionTimeout = setTimeout(() => {
+        // 获取当前页所有行的ID
+        const currentPageIds = new Set(pagedList.value.map(r => r.id))
+        // 移除当前页中所有已选的
+        for (const id of currentPageIds) {
+            selectedIds.delete(id)
+        }
+        // 重新添加当前页勾选的
+        val.forEach(v => selectedIds.add(v.id))
+        selectedRowsArray.value = val
+        // 同步全选状态
+        const total = displayList.value.length
+        const selected = selectedIds.size
+        selectAllAcrossPages.value = total > 0 && selected === total
+        isIndeterminate.value = selected > 0 && selected < total
+    }, 50)
 }
 
-// 计算 payload 的唯一标识 key
-function getPayloadKey(selectedVariables, deviceId) {
-    if (!selectedVariables || selectedVariables.length === 0) {
-        return 'empty_' + (deviceId || '')
-    }
-    // 从 allVariableList 中获取最新的变量数据（确保使用编辑后的最新值）
-    const getLatestVariable = (varId) => {
-        return allVariableList.value.find(v => String(v.id) === String(varId))
-    }
-    // 获取有效的最新变量
-    const validVariables = selectedVariables
-        .map(v => getLatestVariable(v.id))
-        .filter(Boolean)
-    // 按变量ID排序，确保选中顺序不影响 key
-    const sorted = [...validVariables].sort((a, b) => {
-        const idA = a.id || ''
-        const idB = b.id || ''
-        return String(idA).localeCompare(String(idB))
-    })
-    // 提取影响 payload 的关键字段
-    const keyParts = sorted.map(v => {
-        return [
-            v.id || '',
-            v.modbusDevice || '',
-            v.modbusType || '',
-            v.modbusAddr || '',
-            v.data_len || ''
-        ].join(':')
-    })
-    return keyParts.join('|')
-}
+// Payload 变化检测 - 极度简化
+let _lastSavedIds = null
+let _lastDeviceId = null
+const _hasChanged = ref(false)
 
-// 从 localStorage 读取上次下发的变量ID列表
-function getLastActiveVariableIds(deviceId) {
-    if (!deviceId) return null
+function loadLastSavedIds(deviceId) {
+    if (_lastDeviceId === deviceId && _lastSavedIds !== null) {
+        return _lastSavedIds
+    }
     try {
         const data = localStorage.getItem(`activeVariables_${deviceId}`)
-        return data ? JSON.parse(data) : null
+        _lastSavedIds = data ? new Set(JSON.parse(data)) : new Set()
     } catch {
-        return null
+        _lastSavedIds = new Set()
     }
+    _lastDeviceId = deviceId
+    return _lastSavedIds
 }
 
-// 保存下发的变量ID列表到 localStorage
-function saveActiveVariableIds(deviceId, variableIds) {
-    if (!deviceId) return
+function saveSelectedIds(deviceId, ids) {
     try {
-        localStorage.setItem(`activeVariables_${deviceId}`, JSON.stringify(variableIds || []))
+        const idArr = Array.from(ids)
+        localStorage.setItem(`activeVariables_${deviceId}`, JSON.stringify(idArr))
+        _lastSavedIds = ids
+        _lastDeviceId = deviceId
     } catch {
-        // ignore
     }
 }
 
-// 从 localStorage 读取上次下发的 payload key（保留向后兼容）
-function getLastPayloadKey(deviceId) {
-    if (!deviceId) return null
-    try {
-        return localStorage.getItem(`lastPayload_${deviceId}`)
-    } catch {
-        return null
+// 比较两个 Set 是否相等
+function setsEqual(a, b) {
+    if (a.size !== b.size) return false
+    for (const id of a) {
+        if (!b.has(id)) return false
     }
+    return true
 }
 
-// 保存 payload key 到 localStorage（保留向后兼容）
-function savePayloadKey(deviceId, key) {
-    if (!deviceId) return
-    try {
-        localStorage.setItem(`lastPayload_${deviceId}`, key)
-    } catch {
-        // ignore
+// 计算变化 - 监听响应式的 selectedRowsArray
+watch([selectedDevID, selectedRowsArray], () => {
+    if (!currentDevice.value) {
+        _hasChanged.value = false
+        return
     }
-}
+    const last = loadLastSavedIds(currentDevice.value.id)
+    const current = new Set(selectedRowsArray.value.map(v => String(v.id)))
+    _hasChanged.value = !setsEqual(last, current)
+}, { immediate: true })
 
-// 检查是否有 payload 变化
-const hasPayloadChanged = computed(() => {
-    payloadRefreshTrigger.value // 引用这个响应式变量，确保其变化时会重新计算
-    if (!currentDevice.value) return false
-    const lastKey = getLastPayloadKey(currentDevice.value.id)
-    const currentKey = getPayloadKey(selectedRows.value, currentDevice.value.id)
-    // 如果 lastKey 不存在（首次下发），或者两个 key 不同，说明有变化
-    return !lastKey || lastKey !== currentKey
-})
-
-// 处理 Features 下发成功
+// 下发成功处理
 async function handleFeaturesSuccess(variables) {
-    // 先刷新变量列表确保有最新数据
-    await fetchVariables()
+    await fetchVariables(selectedDevID.value)
     if (currentDevice.value) {
-        // 保存变量ID列表
-        const variableIds = (variables || []).map(v => String(v.id))
-        saveActiveVariableIds(currentDevice.value.id, variableIds)
-        
-        const key = getPayloadKey(variables, currentDevice.value.id)
-        savePayloadKey(currentDevice.value.id, key)
-        // 强制刷新 hasPayloadChanged
-        payloadRefreshTrigger.value++
+        const ids = new Set((variables || []).map(v => String(v.id)))
+        saveSelectedIds(currentDevice.value.id, ids)
+        _hasChanged.value = false
+        // 恢复选择状态
+        if (tableRef.value && tableRef.value.toggleRowSelection) {
+            displayList.value.forEach(row => {
+                if (ids.has(row.id)) {
+                    tableRef.value.toggleRowSelection(row, true)
+                }
+            })
+        }
     }
 }
+
 // 回溯变量
 async function handleRecoveryVariable() {
     if (!currentDevice.value) {
@@ -404,51 +570,63 @@ async function handleRecoveryVariable() {
         return
     }
     try {
-        // 这里假设回溯所有变量，如需单个变量可调整参数
         await api.recoveryvariable({
             devID: currentDevice.value.id,
-            // varName: ,
         })
         if (window.ElMessage) window.ElMessage.success('回溯成功')
-        fetchVariables()
+        fetchVariables(selectedDevID.value)
     } catch (e) {
         if (window.ElMessage) window.ElMessage.error('回溯失败')
     }
 }
 
-// 当 props.initDevId 被传入时，优先使用按设备ID接口拉取变量
+// 设备切换处理 - 简化，避免重复请求
+let isLoading = false
+let lastInitDevId = null
+
 watch(
     () => props.initDevId,
     (val) => {
-        if (val) {
+        if (val && val !== lastInitDevId && !isLoading) {
+            lastInitDevId = val
             selectedDevID.value = String(val)
-            fetchVariablesByDevId(val)
+            isLoading = true
+            fetchVariablesByDevId(val).finally(() => {
+                isLoading = false
+            })
         }
-    },
-    { immediate: true }
+    }
 )
 
-// 当用户在页面选择设备时，使用回退逻辑或按设备接口拉取
-watch(selectedDevID, (val) => {
-    if (!val) return
-    // 如果传入了 initDevId 并且等于当前选择的ID，优先走按id接口
-    if (props.initDevId && String(props.initDevId) === String(val)) {
-        fetchVariablesByDevId(val)
-    } else {
-        // 默认仍然使用 getvariables 全量接口并本地过滤（保持兼容）
-        fetchVariables()
-    }
+watch(selectedDevID, (val, oldVal) => {
+    if (!val || val === oldVal || isLoading) return
+    isLoading = true
+    fetchVariables(val).finally(() => {
+        isLoading = false
+    })
 })
 
 onMounted(() => {
-    if (props.initDevId) {
-        selectedDevID.value = String(props.initDevId)
-        fetchVariablesByDevId(props.initDevId)
-    } else {
-        fetchVariables()
+    if (!isLoading) {
+        isLoading = true
+        if (props.initDevId) {
+            lastInitDevId = props.initDevId
+            selectedDevID.value = String(props.initDevId)
+            fetchVariables(props.initDevId).finally(() => {
+                isLoading = false
+            })
+        } else if (deviceList.value.length > 0) {
+            selectedDevID.value = String(deviceList.value[0].id)
+            fetchVariables(deviceList.value[0].id).finally(() => {
+                isLoading = false
+            })
+        } else {
+            isLoading = false
+        }
     }
 })
 </script>
+
 <style scoped>
 .el-btn {
     color: #409EFF !important;

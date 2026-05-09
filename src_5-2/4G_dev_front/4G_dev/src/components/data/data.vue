@@ -13,16 +13,33 @@
             <el-button type="primary" size="small" style="margin-left: 24px;" @click="refresh">
                 刷新
             </el-button>
-            <el-checkbox v-model="showAllVariables" style="margin-left: 16px;" @change="refresh">
-                显示所有变量
-            </el-checkbox>
         </div>
-        <div v-if="!showAllVariables && hasActiveVariables === false" style="margin-bottom: 12px; padding: 12px; background: #fff7e6; border: 1px solid #ffd591; border-radius: 4px;">
-            <el-icon style="color: #fa9d3b; margin-right: 8px;"><Warning /></el-icon>
-            <span style="color: #874a00;">还没有下发变量配置，请先去变量管理页面下发配置</span>
-        </div>
+
+        <el-tabs v-model="activeTab" style="margin-bottom: 12px;">
+            <el-tab-pane label="真实数据" name="production">
+                <div v-if="!showAllVariables && hasActiveVariables === false" style="margin-bottom: 12px; padding: 12px; background: #fff7e6; border: 1px solid #ffd591; border-radius: 4px;">
+                    <el-icon style="color: #fa9d3b; margin-right: 8px;"><Warning /></el-icon>
+                    <span style="color: #874a00;">还没有下发变量配置，请先去变量管理页面下发配置</span>
+                </div>
+                <el-checkbox v-model="showAllVariables" style="margin-bottom: 12px;" @change="refresh">
+                    显示所有变量
+                </el-checkbox>
+            </el-tab-pane>
+            <el-tab-pane label="沙箱数据" name="sandbox">
+                <div style="margin-bottom: 12px; padding: 12px; background: #fffbe6; border: 1px solid #ffe58f; border-radius: 4px;">
+                    <el-icon style="color: #faad14; margin-right: 8px;"><Warning /></el-icon>
+                    <span style="color: #ad6b00;">沙箱数据由模拟器生成，不会影响真实设备</span>
+                </div>
+            </el-tab-pane>
+        </el-tabs>
+
         <el-table :data="variableList" style="width: 100%;" :header-cell-style="{ color: '#000', fontWeight: 'bold' }">
-            <el-table-column prop="varName" label="变量名" min-width="120"></el-table-column>
+            <el-table-column label="变量名" min-width="160">
+                <template #default="scope">
+                    <span>{{ scope.row.varName }}</span>
+                    <el-tag v-if="scope.row.scope === 'sandbox' || activeTab === 'sandbox'" size="small" type="warning" style="margin-left: 6px;">🧪 沙箱</el-tag>
+                </template>
+            </el-table-column>
             <el-table-column prop="dataType" label="数据类型" min-width="100">
                 <template #default="scope">
                     {{ formatDataType(scope.row.dataType) }}
@@ -67,6 +84,7 @@ const deviceOptions = ref([])
 const variableList = ref([])
 const loading = ref(false)
 const showAllVariables = ref(false)
+const activeTab = ref('production')
 const selectedDevice = computed(() =>
     deviceOptions.value.find(dev => dev.id === selectedDevID.value)
 )
@@ -133,8 +151,125 @@ function formatDisplayValue(row) {
 async function refresh() {
     await fetchDeviceOptions()
     if (selectedDevID.value) {
-        await fetchVariableList(selectedDevID.value)
+        if (activeTab.value === 'sandbox') {
+            await fetchSandboxData(selectedDevID.value)
+        } else {
+            await fetchVariableList(selectedDevID.value)
+        }
     }
+}
+
+// 获取设备序列号
+function getDeviceSerial(devID) {
+    const dev = deviceOptions.value.find(d => d.id == devID)
+    return dev?.serial || null
+}
+
+// 获取沙箱变量ID列表
+function getSandboxVariableIds(deviceId) {
+    if (!deviceId) return []
+    try {
+        const data = localStorage.getItem(`importedVariables_${deviceId}`)
+        return data ? JSON.parse(data) : []
+    } catch {
+        return []
+    }
+}
+
+// 获取沙箱变量数据
+async function fetchSandboxData(devID) {
+    if (!devID) {
+        variableList.value = []
+        return
+    }
+    loading.value = true
+    try {
+        const res = await api.getvariables({ devID })
+        const allVariables = res.data?.data?.variables || []
+        const sandboxVars = allVariables.filter(v => v.devID == devID && v.scope === 'sandbox')
+
+        if (!sandboxVars.length) {
+            variableList.value = []
+            loading.value = false
+            return
+        }
+
+        const groups = {}
+        sandboxVars.forEach(v => {
+            const slave = v.modbusDevice
+            const dtype = v.modbusType
+            const addr = v.modbusAddr
+            const key = `${slave}_${dtype}`
+            if (!groups[key]) groups[key] = { slave, dtype, addrs: new Set(), vars: [] }
+            groups[key].addrs.add(Number(addr))
+            groups[key].vars.push(v)
+        })
+
+        const DevSerial = getDeviceSerial(devID)
+        if (!DevSerial) {
+            variableList.value = sandboxVars.map(v => ({ ...v, lasttime: '-', data: '-' }))
+            loading.value = false
+            return
+        }
+
+        const latestDataMap = {}
+        const groupKeys = Object.keys(groups)
+        for (const gk of groupKeys) {
+            const g = groups[gk]
+            const params = {
+                DevSerial,
+                SlaveAddr: Number(g.slave),
+                ModbusType: Number(g.dtype),
+                DataAddrs: Array.from(g.addrs)
+            }
+            try {
+                const queryRes = await api.sandboxDataQuery(params)
+                const resp = queryRes.data
+                let latestDataArr = []
+                if (Array.isArray(resp)) latestDataArr = resp
+                else if (Array.isArray(resp?.data)) latestDataArr = resp.data
+                else latestDataArr = []
+
+                latestDataArr.forEach((item) => {
+                    let slave = Number(item.SlaveAddr ?? item.slaveAddr ?? item.slave_addr ?? params.SlaveAddr)
+                    let dtype = Number(item.DataType ?? item.dataType ?? item.data_type ?? params.ModbusType)
+                    let daddr = Number(item.DataAddr ?? item.dataAddr ?? item.data_addr ?? item.addr)
+                    if (Number.isNaN(slave) || Number.isNaN(dtype) || Number.isNaN(daddr)) return
+                    const key = `${slave}_${dtype}_${daddr}`
+                    latestDataMap[key] = {
+                        time: item.Time ?? item.time ?? '-',
+                        value: item.Value ?? item.value ?? '-',
+                        valueBool: item.ValueBool ?? item.valueBool,
+                        valueInt: item.ValueInt ?? item.valueInt,
+                        valueFloat: item.ValueFloat ?? item.valueFloat,
+                        valueString: item.ValueString ?? item.valueString,
+                        parsedValue: item.ParsedValue ?? item.parsedValue
+                    }
+                })
+            } catch (err) {
+                console.error('沙箱数据查询失败', gk, err)
+            }
+        }
+
+        variableList.value = sandboxVars.map(v => {
+            const key = `${Number(v.modbusDevice)}_${Number(v.modbusType)}_${Number(v.modbusAddr)}`
+            const latest = latestDataMap[key] || {}
+            return {
+                ...v,
+                lasttime: latest.time ?? '-',
+                data: latest.value ?? '-',
+                valueBool: latest.valueBool,
+                valueInt: latest.valueInt,
+                valueFloat: latest.valueFloat,
+                valueString: latest.valueString,
+                parsedValue: latest.parsedValue
+            }
+        })
+    } catch (e) {
+        console.error('fetchSandboxData error', e)
+        variableList.value = []
+    }
+    loading.value = false
 }
 
 // 自动刷新
@@ -173,7 +308,7 @@ async function fetchVariableList(devID) {
     try {
         const res = await api.getvariables({ devID })
         const allVariables = res.data?.data?.variables || []
-        let filteredVariables = allVariables.filter(v => v.devID == devID)
+        let filteredVariables = allVariables.filter(v => v.devID == devID && v.scope !== 'sandbox')
 
         // 如果不是显示所有变量，过滤出活跃变量
         if (!showAllVariables.value) {
@@ -323,6 +458,13 @@ watch(() => props.devId, (newId) => {
     }
 })
 watch(selectedDevID, (id) => {
-    fetchVariableList(id)
+    if (activeTab.value === 'sandbox') {
+        fetchSandboxData(id)
+    } else {
+        fetchVariableList(id)
+    }
+})
+watch(activeTab, () => {
+    refresh()
 })
 </script>

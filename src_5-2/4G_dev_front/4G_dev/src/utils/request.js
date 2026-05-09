@@ -3,7 +3,7 @@ import axios from 'axios'
 const service = axios.create({
     baseURL: 'http://127.0.0.1:8000',
     // baseURL: 'http://172.12.0.230:8000',
-    timeout: 5000
+    timeout: 30000
 })
 
 // 请求拦截器：每次请求自动加 token
@@ -23,7 +23,6 @@ service.interceptors.response.use(
         // 这里假设后端返回的未登录/掉线状态码为401或自定义code
         if (response.data && (
             // response.data.code === 401 ||
-            response.data.code === 66 || // gcode.CodeInvalidRequest.Code() 可能为 1001
             response.data.message === '未登录' ||
             response.data.message === 'token已失效' ||
             response.data.message === '未登录或登录过期，请重新登陆'

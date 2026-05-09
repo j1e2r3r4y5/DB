@@ -28,6 +28,7 @@ from protocol.heartbeat_handler import HeartbeatHandler
 from protocol.module_config_handler import ModuleConfigHandler
 from protocol.data_config_handler import DataConfigHandler
 from protocol.remote_write_handler import RemoteWriteHandler
+from data.sandbox_device import SandboxVirtualDevice, DataConfig as SandboxDataConfig
 
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,9 @@ class DTUSimulator:
 
         self._heartbeat_thread: Optional[threading.Thread] = None
         self._data_upload_thread: Optional[threading.Thread] = None
+        self._sandbox_upload_thread: Optional[threading.Thread] = None
+
+        self.sandbox_device: Optional[SandboxVirtualDevice] = None
 
     def initialize(self, use_address_segments: bool = True, config_file: str = None):
         logger.info("Initializing DTU Simulator...")
@@ -70,6 +74,7 @@ class DTUSimulator:
 
         self._setup_modbus_tcp_server()
         self._setup_data_scheduler()
+        self._setup_sandbox()
 
         logger.info("DTU Simulator initialized successfully")
 
@@ -81,7 +86,9 @@ class DTUSimulator:
         )
 
     def _initialize_components(self):
-        self.mqtt_manager = MQTTClientManager()
+        self.mqtt_manager = MQTTClientManager(
+            sandbox_down_topic=config.SANDBOX_DOWN_TOPIC
+        )
         self.modbus_master = ModbusMaster()
         self.data_scheduler = DataScheduler(self.modbus_master)
 
@@ -226,6 +233,11 @@ class DTUSimulator:
         self.config_manager.update_data_configs(configs)
         logger.info(f"Set up {len(configs)} merged data configs from address segments")
 
+    def _setup_sandbox(self):
+        """Setup sandbox environment"""
+        self.sandbox_device = SandboxVirtualDevice(strategy=config.SANDBOX_STRATEGY)
+        logger.info(f"Sandbox device initialized with strategy: {config.SANDBOX_STRATEGY}")
+
     def _on_downlink_message(self, payload: bytes):
         logger.info(f"[DOWNLINK] Received: {payload.hex()}")
 
@@ -233,6 +245,58 @@ class DTUSimulator:
         if response:
             logger.info(f"[UPLINK] Sending response: {response.hex()}")
             self.mqtt_manager.publish(self.mqtt_manager.up_topic, response, config.MQTT_QOS_UP)
+
+    def _on_sandbox_downlink_message(self, payload: bytes):
+        """Handle sandbox downlink messages (独立topic)"""
+        logger.info(f"[SANDBOX DOWNLINK] Received: {payload.hex()}")
+
+        if not payload or len(payload) < 1:
+            return
+
+        func_code = payload[0]
+
+        if func_code == 0x04:
+            self._handle_sandbox_data_config(payload)
+        elif func_code == 0x03:
+            logger.info("[SANDBOX DOWNLINK] Sandbox config query received (ignored)")
+
+    def _on_sandbox_downlink_paho(self, client, userdata, msg):
+        """Paho callback wrapper for sandbox downlink messages"""
+        self._on_sandbox_downlink_message(msg.payload)
+
+    def _handle_sandbox_data_config(self, payload: bytes):
+        """Parse sandbox 0x04 data config and update sandbox device"""
+        if len(payload) < 3:
+            logger.warning("Invalid sandbox data config: too short")
+            return
+
+        import struct
+        group_count = struct.unpack('>H', payload[1:3])[0]
+        logger.info(f"[SANDBOX DOWNLINK] Data config: {group_count} groups")
+
+        if group_count == 0:
+            self.sandbox_device.clear_configs()
+            return
+
+        config_groups = []
+        offset = 3
+        func_code_map = {0: 0x01, 1: 0x02, 3: 0x04, 4: 0x03}
+
+        for i in range(group_count):
+            if offset + 6 > len(payload):
+                break
+            slave_id = payload[offset]
+            data_type = payload[offset + 1]
+            start_addr = struct.unpack('>H', payload[offset + 2:offset + 4])[0]
+            quantity = struct.unpack('>H', payload[offset + 4:offset + 6])[0]
+            func_code = func_code_map.get(data_type, 0x03)
+
+            config = SandboxDataConfig(slave_id, func_code, start_addr, quantity)
+            config_groups.append(config)
+            logger.debug(f"  Sandbox group {i}: slave={slave_id}, type={data_type}, addr={start_addr}, qty={quantity}")
+            offset += 6
+
+        self.sandbox_device.update_configs(config_groups)
 
     def _on_data_collected(self, job_id: str, slave_id: int, func_code: int, start_addr: int, quantity: int, data: bytes):
         logger.debug(f"Data collected: job={job_id}, slave={slave_id}, func={func_code}, addr={start_addr}, qty={quantity}, data={data.hex()}")
@@ -293,6 +357,8 @@ class DTUSimulator:
 
         if self.mqtt_manager.connect():
             logger.info("MQTT connected")
+            self.mqtt_manager.subscribe(config.SANDBOX_DOWN_TOPIC, config.MQTT_QOS_DOWN)
+            self.mqtt_manager._client.message_callback_add(config.SANDBOX_DOWN_TOPIC, self._on_sandbox_downlink_paho)
         else:
             logger.error("Failed to connect to MQTT broker")
 
@@ -301,6 +367,7 @@ class DTUSimulator:
 
         self._start_heartbeat_loop()
         self._start_data_upload_loop()
+        self._start_sandbox_upload_loop()
 
         logger.info("DTU Simulator started successfully")
 
@@ -394,6 +461,55 @@ class DTUSimulator:
 
         self._data_upload_thread = threading.Thread(target=data_upload_loop, daemon=True)
         self._data_upload_thread.start()
+
+    def _start_sandbox_upload_loop(self):
+        def sandbox_upload_loop():
+            last_upload_time = 0
+            while self._running:
+                time.sleep(1)
+                if not self.mqtt_manager.is_connected():
+                    continue
+                try:
+                    configs = self.sandbox_device.get_configs()
+                    if not configs:
+                        continue
+                    current_time = time.time()
+                    interval = self.config_manager.get_module_config().send_interval
+                    if interval <= 0:
+                        interval = 30
+                    if current_time - last_upload_time >= interval:
+                        self.sandbox_device.simulate_changes()
+                        payload = bytes([0x05])
+                        payload += len(configs).to_bytes(2, 'big')
+                        for cfg in configs:
+                            if cfg.func_code == 3:
+                                data = self.sandbox_device.read_holding_registers(cfg.start_addr, cfg.quantity)
+                            elif cfg.func_code == 4:
+                                data = self.sandbox_device.read_input_registers(cfg.start_addr, cfg.quantity)
+                            elif cfg.func_code == 1:
+                                data = self.sandbox_device.read_coils(cfg.start_addr, cfg.quantity)
+                            elif cfg.func_code == 2:
+                                data = self.sandbox_device.read_discrete_inputs(cfg.start_addr, cfg.quantity)
+                            else:
+                                continue
+                            func_to_type = {0x01: 0x00, 0x02: 0x01, 0x03: 0x04, 0x04: 0x03}
+                            data_type = func_to_type.get(cfg.func_code, cfg.func_code)
+                            payload += bytes([cfg.slave_id, data_type])
+                            payload += cfg.start_addr.to_bytes(2, 'big')
+                            payload += len(data).to_bytes(2, 'big')
+                            payload += data
+                        if len(payload) > 3:
+                            self.mqtt_manager.publish(
+                                config.SANDBOX_UP_TOPIC,
+                                payload,
+                                config.MQTT_QOS_UP
+                            )
+                            logger.info(f"[SANDBOX UPLINK] Data upload sent: {len(configs)} groups")
+                            last_upload_time = current_time
+                except Exception as e:
+                    logger.error(f"Sandbox upload error: {e}")
+        self._sandbox_upload_thread = threading.Thread(target=sandbox_upload_loop, daemon=True)
+        self._sandbox_upload_thread.start()
 
     def _simulate_data_changes(self):
         try:

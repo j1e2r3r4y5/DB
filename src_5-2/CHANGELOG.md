@@ -2,6 +2,189 @@
 
 所有重要的项目变更都将记录在此文件中。
 
+## [1.9.0] - 2026-05-09
+
+### 沙箱功能（完整隔离环境）
+沙箱是一个独立的测试环境，导入的变量自动标记为沙箱，走独立 MQTT 通道，模拟器生成模拟数据上报，与生产数据完全隔离互不干扰。
+
+#### 后端新增
+1. **新增沙箱独立 MQTT 主题订阅**
+   - 上行：`/dtu/{serial}/sandbox/up`
+   - 下行：`/dtu/{serial}/sandbox/down`
+   - MQTT 重连后自动恢复沙箱主题订阅
+   - 修改文件：`dev_back_end/dev/internal/logic/mqtt.go`
+
+2. **新增沙箱数据查询 API**
+   - `POST /sandbox/dataquery` — 查询沙箱数据（按 scope=sandbox 过滤）
+   - 修改文件：`dev_back_end/dev/api/dev/v1/payload.go`、`controller/payload.go`
+
+3. **InfluxDB 写入加 scope 标签**
+   - `WritdataToInflux` 和 `WriteEnhancedDataToInflux` 写入时加 `scope` tag
+   - 生产数据：`scope=production`（兼容旧数据 `not exists(scope)`）
+   - 沙箱数据：`scope=sandbox`
+   - 修改文件：`dev_back_end/dev/internal/logic/payload.go`
+
+4. **SendDataConfig 支持 scope 参数**
+   - 根据 `scope` 决定下发到生产 topic 或沙箱 topic
+   - 修改文件：`dev_back_end/dev/internal/logic/sendcod.go`
+
+5. **变量表加 scope 字段**
+   - `model.Variables` 新增 `Scope string` 字段
+   - `model.Func04Request` 新增 `Scope string` 字段
+   - 数据库：`variables` 表 + `caching` 表加 `scope VARCHAR(20) DEFAULT 'production'`
+   - 修改文件：`dev_back_end/dev/internal/model/variables.go`、`sendcod.go`
+
+6. **沙箱变量不触发生产设备 Changeflag**
+   - 沙箱变量的新增/删除不会修改生产设备的配置变更标志
+   - 修改文件：`dev_back_end/dev/internal/logic/variables.go`
+
+7. **沙箱消息不更新设备在线状态**
+   - 沙箱 MQTT 消息不会错误地更新生产设备的在线状态
+   - 修改文件：`dev_back_end/dev/internal/logic/mqtt.go`
+
+8. **新增批量导入变量 API**
+   - `POST /batch-addvariable` — 一次请求导入全部变量，大幅提升导入速度
+   - 新增文件：`dev_back_end/dev/api/dev/v1/variables.go`
+   - 新增文件：`dev_back_end/dev/internal/controller/varvariables.go`
+   - 新增文件：`dev_back_end/dev/internal/logic/variables.go` → `BatchAddVariable()`
+   - 接口定义：`dev_back_end/dev/internal/service/Variable.go`
+
+#### 模拟器新增
+9. **新建沙箱虚拟设备**
+   - `SandboxVirtualDevice` — 不依赖真实 Modbus，生成模拟数据
+   - 支持三种策略：random（随机）、increment（递增）、constant（固定值）
+   - 新建文件：`simulator_v1536/data/sandbox_device.py`
+
+10. **沙箱独立上报循环**
+    - 订阅 `/dtu/{serial}/sandbox/down` 接收沙箱配置
+    - 按生产设备相同的上报间隔生成模拟数据并上报到 `/dtu/{serial}/sandbox/up`
+    - 修改文件：`simulator_v1536/main.py`
+
+11. **MQTT 重连自动订阅沙箱主题**
+    - `MQTTClientManager` 构造函数新增 `sandbox_down_topic` 参数
+    - `_on_connect` 中自动重新订阅沙箱下行主题
+    - 修改文件：`simulator_v1536/core/mqtt_client.py`
+
+12. **沙箱配置**
+    - 新增 `SANDBOX_UP_TOPIC`、`SANDBOX_DOWN_TOPIC`、`SANDBOX_STRATEGY`
+    - 修改文件：`simulator_v1536/config.py`
+
+#### 前端新增
+13. **导入变量默认标记为沙箱**
+    - `ImportVariablesDialog` 导入时 `scope='sandbox'`
+    - 修改文件：`4G_dev_front/4G_dev/src/components/variables/ImportVariablesDialog.vue`
+
+14. **变量列表加黄色「沙箱」标签**
+    - scope 映射修复（解决标签不显示 bug）
+    - 正常变量排前面，沙箱变量排后面
+    - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`
+
+15. **下发弹窗沙箱检测**
+    - 检测包含沙箱变量时提示"将下发到沙箱通道"
+    - 混合选择（沙箱+真实）时禁止下发并提示分开操作
+    - scope 参数传入 `sendDataConfig` API
+    - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+16. **数据管理页新增「沙箱数据」Tab**
+    - 独立 Tab 展示沙箱变量数据
+    - 调用 `/sandbox/dataquery` 查询沙箱数据
+    - 沙箱数据带 🧪 标签
+    - 修改文件：`4G_dev_front/4G_dev/src/components/data/data.vue`
+
+17. **前端 API 新增**
+    - `sandboxDataQuery()` — 沙箱数据查询
+    - `batchAddvariable()` — 批量导入变量
+    - 修改文件：`4G_dev_front/4G_dev/src/api/index.js`
+
+### 优化与修复
+
+18. **修复 InfluxDB 查询 limit 限制导致变量不显示数据**
+    - 问题：`|> limit(n:1000)` 导致 936 个之后的变量查不到最新数据
+    - 修复：改为 `|> last()` 只返回每个地址的最新一条数据
+    - 修改文件：`dev_back_end/dev/internal/controller/payload.go`
+
+19. **导入变量加并发 + 进度条**
+    - 优先调用批量 API（1 次请求），失败回退到并发 5 条逐条导入
+    - 带进度条和百分比显示
+    - 修改文件：`4G_dev_front/4G_dev/src/components/variables/ImportVariablesDialog.vue`
+
+20. **变量管理页加分页**
+    - 每页默认 50 条，可选 50/100/200/500
+    - 跨页保持选中状态（`reserve-selection`）
+    - 翻页后勾选框自动恢复
+    - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`
+
+21. **变量管理页初始加载优化**
+    - 按设备 ID 过滤查询，不再拉取所有设备的数据
+    - 没选设备时不加载数据
+    - 修改文件：`4G_dev_front/4G_dev/src/components/variables/variables.vue`
+
+22. **删除 simulator_v3 目录**
+    - 保留增强版 simulator_v1536
+    - 更新启动脚本引用路径
+    - 修改文件：`tools/deploy/start-all.ps1`
+
+---
+
+## [1.8.0] - 2026-05-09
+
+### 协议修正（03/04/05 "数据数量" → "报文总长度"）
+
+#### 协议文档更新
+
+1. **修正agreement.md和约束.md协议定义**
+   - 问题：03/04/05功能码中"2字节数据数量"字段被误解为"数据项数量"，实际含义是"报文总长度"
+   - 改动：03上发/04下发/05上发协议定义改为"2字节报文总长度（从功能码开始到报文结束的字节数）"
+   - 改动：更新所有示例和解析规则
+   - 修改文件：`dev_back_end/dev/resource/配置文件/agreement.md`、`约束.md`
+
+#### 后端解析/编码修正
+
+2. **修正功能码03解析逻辑**
+   - 问题：原按"数据项数量"循环解析，实际应按报文总长度计算数据项数量
+   - 修复：`dataCount = (totalLen - 3) / 6`
+   - 修改文件：`dev_back_end/dev/internal/logic/payload.go`
+
+3. **修正功能码04编码逻辑**
+   - 问题：原写入"数据项数量"，实际应写入"报文总长度"
+   - 修复：`totalLen = 3 + len(entries) * 6`
+   - 修改文件：`dev_back_end/dev/internal/logic/sendcod.go`
+
+4. **修正功能码05解析逻辑**
+   - 问题：原按"数据项数量"循环，实际应根据剩余字节数变长循环
+   - 修复：`for i := 0; remaining >= 6; i++`，每次循环减去已消耗字节
+   - 修改文件：`dev_back_end/dev/internal/logic/payload.go`
+
+5. **修正ParseAndWriteData数据范围计算**
+   - 问题1：`readRegCount = len(data) / 2` 整数除法导致 `1/2=0`，`endAddr=-1`，跳过所有变量
+   - 修复1：`readRegCount = len(data)`（字节为单位，不再除以2）
+   - 问题2：`offset = (modbusAddr - baseAddr) * 2` 多乘了2，导致偏移量翻倍
+   - 修复2：`offset = modbusAddr - baseAddr`
+   - 修改文件：`dev_back_end/dev/internal/logic/payload.go`
+
+6. **修正05数据降级写入路径**
+   - 问题：降级路径中 `itemCount = dataLen / 2 = 0`，导致for循环不执行，无数据写入InfluxDB
+   - 修复：改为直接以hex格式写入原始数据
+   - 修改文件：`dev_back_end/dev/internal/logic/payload.go`
+
+7. **清理死代码**
+   - 移除 `Func04Request.DataCount` 字段（不再使用）
+   - 修改文件：`dev_back_end/dev/internal/model/sendcod.go`、`controller/payload.go`
+
+#### 前端修正
+
+8. **修正Features.vue下发指令构建**
+   - 问题：前端构建04指令时写入"数据组数"，实际应写入"报文总长度"
+   - 修复：`totalLen = 3 + groups.length * 6`
+   - 修复：清空配置从 `040000` 改为 `040003`（报文总长度=3）
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+### 功能新增
+
+9. **新增离线检测机制**
+   - 功能：后台每60秒检查所有设备，3分钟无更新自动设为离线
+   - 新增文件：`dev_back_end/dev/internal/cmd/cmd.go` → `startOfflineDetection()`
+
 ## [1.7.0] - 2026-05-05
 
 ### 变量管理页面全面重构

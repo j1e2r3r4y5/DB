@@ -33,12 +33,14 @@ class MQTTClientManager:
         client_id: str = None,
         up_topic: str = None,
         down_topic: str = None,
+        sandbox_down_topic: str = None,
     ):
         self.broker = broker or config.MQTT_BROKER
         self.port = port or config.MQTT_PORT
         self.client_id = client_id or f"dtu_sim_{config.DEVICE_SERIAL}_{int(time.time())}"
         self.up_topic = up_topic or config.UP_TOPIC
         self.down_topic = down_topic or config.DOWN_TOPIC
+        self.sandbox_down_topic = sandbox_down_topic or getattr(config, 'SANDBOX_DOWN_TOPIC', None)
 
         self._client: Optional[mqtt.Client] = None
         self._connected = False
@@ -151,6 +153,8 @@ class MQTTClientManager:
             logger.info("MQTT connected successfully")
 
             self.subscribe(self.down_topic, config.MQTT_QOS_DOWN)
+            if self.sandbox_down_topic:
+                self.subscribe(self.sandbox_down_topic, config.MQTT_QOS_DOWN)
         else:
             reason_codes = {
                 1: "Protocol version mismatch",

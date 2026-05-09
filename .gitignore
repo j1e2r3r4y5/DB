@@ -1,6 +1,21 @@
 # 忽略备份文件夹
-src_*/
+src_0*/
+src_1*/
+src_2*/
+src_3*/
+src_4*/
+src_6*/
+src_7*/
+src_8*/
+src_9*/
+src_5-0*/
+src_5-1*/
+src_5/
 src_*-副本/
+src_5-2\ -\ 副本/
+src_5-2备份失败/
+src_5-2*备份*
+src_5-2*失败/
 zq/
 开题/
 毕设材料模板/
@@ -69,6 +84,3 @@ Thumbs.db
 agreement.md
 doc_.md
 old_config.yaml
-
-# 保留主项目
-!src_5-2/
