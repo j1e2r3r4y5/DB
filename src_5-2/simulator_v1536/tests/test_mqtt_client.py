@@ -15,10 +15,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class TestMQTTClientManagerReconnect(unittest.TestCase):
     """Test MQTT reconnection logic"""
 
-    @patch('simulator_v3.core.mqtt_client.mqtt')
+    @patch('core.mqtt_client.mqtt')
     def test_max_reconnect_attempts(self, mock_mqtt):
         """Test that reconnection stops after max attempts"""
-        from simulator_v3.core.mqtt_client import MQTTClientManager
+        from core.mqtt_client import MQTTClientManager
 
         mock_client_instance = MagicMock()
         mock_mqtt.Client.return_value = mock_client_instance
@@ -34,10 +34,10 @@ class TestMQTTClientManagerReconnect(unittest.TestCase):
 
         self.assertEqual(manager._reconnect_attempts, 3)
 
-    @patch('simulator_v3.core.mqtt_client.mqtt')
+    @patch('core.mqtt_client.mqtt')
     def test_reconnect_attempts_increment(self, mock_mqtt):
         """Test that reconnect attempts are counted"""
-        from simulator_v3.core.mqtt_client import MQTTClientManager
+        from core.mqtt_client import MQTTClientManager
 
         mock_client_instance = MagicMock()
         mock_mqtt.Client.return_value = mock_client_instance
@@ -53,10 +53,10 @@ class TestMQTTClientManagerReconnect(unittest.TestCase):
 
         self.assertEqual(manager._reconnect_attempts, 1)
 
-    @patch('simulator_v3.core.mqtt_client.mqtt')
+    @patch('core.mqtt_client.mqtt')
     def test_reconnect_attempts_reset_on_success(self, mock_mqtt):
         """Test that reconnect attempts reset on successful connection"""
-        from simulator_v3.core.mqtt_client import MQTTClientManager
+        from core.mqtt_client import MQTTClientManager
 
         mock_client_instance = MagicMock()
         mock_mqtt.Client.return_value = mock_client_instance
@@ -73,10 +73,10 @@ class TestMQTTClientManagerReconnect(unittest.TestCase):
 
         self.assertEqual(manager._reconnect_attempts, 0)
 
-    @patch('simulator_v3.core.mqtt_client.mqtt')
+    @patch('core.mqtt_client.mqtt')
     def test_no_reconnect_when_not_running(self, mock_mqtt):
         """Test that reconnection is not attempted when running flag is False"""
-        from simulator_v3.core.mqtt_client import MQTTClientManager
+        from core.mqtt_client import MQTTClientManager
 
         mock_client_instance = MagicMock()
         mock_mqtt.Client.return_value = mock_client_instance
@@ -94,16 +94,16 @@ class TestMQTTQoSConfiguration(unittest.TestCase):
 
     def test_qos_constants_defined(self):
         """Test that QoS constants are properly defined"""
-        from simulator_v3.config import config
+        from config import config
 
         self.assertEqual(config.MQTT_QOS_UP, 2)
         self.assertEqual(config.MQTT_QOS_DOWN, 0)
 
-    @patch('simulator_v3.core.mqtt_client.mqtt')
+    @patch('core.mqtt_client.mqtt')
     def test_subscribe_uses_down_qos(self, mock_mqtt):
         """Test that subscription uses configured QoS"""
-        from simulator_v3.core.mqtt_client import MQTTClientManager
-        from simulator_v3.config import config
+        from core.mqtt_client import MQTTClientManager
+        from config import config
 
         mock_client_instance = MagicMock()
         mock_mqtt.Client.return_value = mock_client_instance

@@ -8,7 +8,7 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simulator_v3.modbus.areas import CoilArea, DiscreteInputArea, HoldingRegisterArea, InputRegisterArea
+from modbus.areas import CoilArea, DiscreteInputArea, HoldingRegisterArea, InputRegisterArea
 
 
 class TestCoilArea(unittest.TestCase):

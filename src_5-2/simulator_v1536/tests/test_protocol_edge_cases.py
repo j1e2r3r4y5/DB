@@ -9,12 +9,12 @@ import struct
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simulator_v3.protocol.handler import ProtocolHandler, HandlerRegistry
-from simulator_v3.protocol.heartbeat_handler import HeartbeatHandler
-from simulator_v3.protocol.module_config_handler import ModuleConfigHandler
-from simulator_v3.protocol.data_config_handler import DataConfigHandler, DataConfig
-from simulator_v3.protocol.remote_write_handler import RemoteWriteHandler
-from simulator_v3.core.config_manager import ConfigManager
+from protocol.handler import ProtocolHandler, HandlerRegistry
+from protocol.heartbeat_handler import HeartbeatHandler
+from protocol.module_config_handler import ModuleConfigHandler
+from protocol.data_config_handler import DataConfigHandler, DataConfig
+from protocol.remote_write_handler import RemoteWriteHandler
+from core.config_manager import ConfigManager
 
 
 class TestHeartbeatHandlerEdgeCases(unittest.TestCase):

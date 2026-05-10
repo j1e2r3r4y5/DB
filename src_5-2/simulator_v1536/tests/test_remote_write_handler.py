@@ -15,7 +15,7 @@ class TestRemoteWriteHandlerExceptionHandling(unittest.TestCase):
     """Test RemoteWriteHandler exception handling mechanisms"""
 
     def setUp(self):
-        from simulator_v3.protocol.remote_write_handler import RemoteWriteHandler
+        from protocol.remote_write_handler import RemoteWriteHandler
         self.handler = RemoteWriteHandler(modbus_master=None)
         self.handler.modbus_master = None
 
@@ -73,7 +73,7 @@ class TestRemoteWriteHandlerExceptionHandling(unittest.TestCase):
 
     def test_struct_error_handling(self):
         """Test struct.error is caught and handled properly"""
-        with patch('simulator_v3.protocol.remote_write_handler.struct.unpack') as mock_unpack:
+        with patch('protocol.remote_write_handler.struct.unpack') as mock_unpack:
             mock_unpack.side_effect = struct.error("Invalid struct format")
 
             payload = bytes([0x06, 0x04, 0x00, 0x01, 0x00, 0x01, 0x00, 0xC8])
@@ -86,7 +86,7 @@ class TestRemoteWriteHandlerExceptionHandling(unittest.TestCase):
         """Test that exceptions include timestamp in logs"""
         short_payload = bytes([0x06, 0x01])
 
-        with self.assertLogs('simulator_v3.protocol.remote_write_handler', level='ERROR') as log:
+        with self.assertLogs('protocol.remote_write_handler', level='ERROR') as log:
             self.handler._handle_remote_write(short_payload)
 
             self.assertTrue(len(log.output) > 0)
@@ -158,7 +158,7 @@ class TestRemoteWriteExceptions(unittest.TestCase):
     """Test custom exception classes"""
 
     def test_remote_write_error_base(self):
-        from simulator_v3.protocol.remote_write_handler import RemoteWriteError
+        from protocol.remote_write_handler import RemoteWriteError
 
         error = RemoteWriteError("Test error", error_code=0xE1, details={"key": "value"})
 
@@ -167,7 +167,7 @@ class TestRemoteWriteExceptions(unittest.TestCase):
         self.assertEqual(str(error), "Test error")
 
     def test_payload_parse_error(self):
-        from simulator_v3.protocol.remote_write_handler import PayloadParseError
+        from protocol.remote_write_handler import PayloadParseError
 
         error = PayloadParseError("Parse failed", details={"offset": 5})
 
@@ -175,14 +175,14 @@ class TestRemoteWriteExceptions(unittest.TestCase):
         self.assertEqual(error.details, {"offset": 5})
 
     def test_modbus_write_error(self):
-        from simulator_v3.protocol.remote_write_handler import ModbusWriteError
+        from protocol.remote_write_handler import ModbusWriteError
 
         error = ModbusWriteError("Write failed", details={"slave_id": 1})
 
         self.assertEqual(error.error_code, 0xE2)
 
     def test_unsupported_data_type_error(self):
-        from simulator_v3.protocol.remote_write_handler import UnsupportedDataTypeError
+        from protocol.remote_write_handler import UnsupportedDataTypeError
 
         error = UnsupportedDataTypeError(data_type=5)
 

@@ -218,6 +218,26 @@ const api = {
             method: 'POST',
             data
         })
+    },
+
+    // ==========================================
+    // 监控相关接口
+    // ==========================================
+
+    // 获取系统健康状态
+    getHealth() {
+        return request({
+            url: '/health',
+            method: 'GET'
+        })
+    },
+
+    // 获取系统统计数据
+    getStats() {
+        return request({
+            url: '/stats',
+            method: 'GET'
+        })
     }
 }
 

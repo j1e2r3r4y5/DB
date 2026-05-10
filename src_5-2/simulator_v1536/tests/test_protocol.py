@@ -8,12 +8,12 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simulator_v3.protocol.handler import ProtocolHandler, HandlerRegistry
-from simulator_v3.protocol.heartbeat_handler import HeartbeatHandler
-from simulator_v3.protocol.module_config_handler import ModuleConfigHandler
-from simulator_v3.protocol.data_config_handler import DataConfigHandler
-from simulator_v3.protocol.remote_write_handler import RemoteWriteHandler
-from simulator_v3.core.config_manager import ConfigManager
+from protocol.handler import ProtocolHandler, HandlerRegistry
+from protocol.heartbeat_handler import HeartbeatHandler
+from protocol.module_config_handler import ModuleConfigHandler
+from protocol.data_config_handler import DataConfigHandler
+from protocol.remote_write_handler import RemoteWriteHandler
+from core.config_manager import ConfigManager
 
 
 class TestHandlerRegistry(unittest.TestCase):
@@ -105,7 +105,7 @@ class TestDataConfigHandler(unittest.TestCase):
         self.handler = DataConfigHandler(self.config_manager)
 
     def test_handle_download_data_config(self):
-        payload = bytes([0x04, 0x00, 0x01, 0x01, 0x03, 0x00, 0x00, 0x00, 0x02])
+        payload = bytes([0x04, 0x00, 0x01, 0x01, 0x04, 0x00, 0x00, 0x00, 0x02])
         result = self.handler._handle_download_data_config(payload)
 
         self.assertIsNotNone(result)

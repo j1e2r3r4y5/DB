@@ -3,6 +3,7 @@ package logic
 import (
 	"context"
 	"dev/internal/dao"
+	"dev/internal/logic/monitor"
 	"dev/internal/model"
 	"dev/internal/service"
 	"fmt"
@@ -118,6 +119,10 @@ func (s *sMqtt) messageHandler(ctx context.Context, c mqtt.Client, msg mqtt.Mess
 		time.Now().Format("15:04:05"),
 		msg.Topic(),
 		string(msg.Payload()))
+
+	// 记录 MQTT 接收指标
+	monitor.GetMetrics().IncMQTTMessagesReceived()
+
 	serial, err := s.fetchDeviceSerial(msg)
 	if err != nil {
 		g.Log().Error(ctx, "无法提取设备序列号", err)
@@ -127,6 +132,18 @@ func (s *sMqtt) messageHandler(ctx context.Context, c mqtt.Client, msg mqtt.Mess
 	scope, _ := ctx.Value("scope").(string)
 	isSandbox := scope == "sandbox"
 	g.Log().Info(ctx, "接收到设备消息", "设备序列号", serial, "scope", scope)
+
+	// 先查询设备当前状态
+	var currentDev *model.Device
+	var wasOffline bool
+	if !isSandbox {
+		var devList []*model.Device
+		err := dao.Dev.Ctx(ctx).Where(dao.Dev.Columns().DevSerial, serial).Scan(&devList)
+		if err == nil && len(devList) > 0 {
+			currentDev = devList[0]
+			wasOffline = currentDev.DevStatus == "0"
+		}
+	}
 
 	// 解析消息
 	isRepeat, Featurescode, DevUpdate, LogUpdate, err := service.Payload().PayloadHandler(ctx, serial, msg.Payload())
@@ -144,6 +161,19 @@ func (s *sMqtt) messageHandler(ctx context.Context, c mqtt.Client, msg mqtt.Mess
 	}
 	
 	if DevUpdate != nil && !isSandbox {
+		// 检查设备是否从离线恢复在线
+		if wasOffline && DevUpdate.DevStatus == 1 {
+			g.Log().Info(ctx, "设备恢复在线", "设备序列号", serial)
+			// 发送恢复在线通知
+			devName := ""
+			devLocation := ""
+			if currentDev != nil {
+				devName = currentDev.Devname
+				devLocation = currentDev.DevLocation
+			}
+			monitor.AlertDeviceOnline(ctx, serial, devName, devLocation)
+		}
+
 		g.Log().Info(ctx, "准备更新设备状态", 
 			"设备序列号", DevUpdate.DevSerial, 
 			"状态", DevUpdate.DevStatus, 
@@ -160,6 +190,11 @@ func (s *sMqtt) messageHandler(ctx context.Context, c mqtt.Client, msg mqtt.Mess
 		} else {
 			g.Log().Info(ctx, "设备状态更新成功", "设备序列号", DevUpdate.DevSerial)
 		}
+	}
+
+	// 如果是数据上报，记录指标
+	if Featurescode == 5 {
+		monitor.GetMetrics().DeviceDataReported()
 	}
 
 	if err != nil {
@@ -192,6 +227,8 @@ func (s *sMqtt) PublishBytes(topic string, payload []byte) error {
 		return token.Error()
 	}
 	g.Log().Info(context.Background(), "PublishBytes 成功", "topic", topic)
+	// 记录 MQTT 发送指标
+	monitor.GetMetrics().IncMQTTMessagesSent()
 	return nil
 }
 

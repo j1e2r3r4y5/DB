@@ -844,15 +844,17 @@ func (s *sPayload) PayloadHandler(ctx context.Context, devSerial string, payload
 		}
 		var cacheVars []*model.Variables
 		if devId != nil {
-			g.Log().Debug(ctx, fmt.Sprintf("设备ID: %v", devId))
+			g.Log().Info(ctx, fmt.Sprintf("设备ID: %v", devId))
 			err = dao.Caching.Ctx(ctx).Where(dao.Caching.Columns().DevID, devId).Scan(&cacheVars)
 			if err != nil {
 				g.Log().Error(ctx, "获取缓存变量失败", err)
 			}
-			g.Log().Debug(ctx, fmt.Sprintf("获取到缓存变量: %d 个", len(cacheVars)))
+			g.Log().Info(ctx, fmt.Sprintf("获取到缓存变量: %d 个", len(cacheVars)))
 			for i, v := range cacheVars {
-				g.Log().Debug(ctx, fmt.Sprintf("  [%d] %s 设备:%d 类型:%s 地址:%d", i, v.VarName, v.ModbusDevice, v.ModbusType, v.ModbusAddr))
+				g.Log().Info(ctx, fmt.Sprintf("  [%d] %s 设备:%d 类型:%s 地址:%d", i, v.VarName, v.ModbusDevice, v.ModbusType, v.ModbusAddr))
 			}
+		} else {
+			g.Log().Info(ctx, "devId为空，无法获取缓存变量")
 		}
 
 		// 遍历解析每个数据项（根据剩余字节数变长数据项）
@@ -889,23 +891,35 @@ func (s *sPayload) PayloadHandler(ctx context.Context, devSerial string, payload
 			}
 			dataLen := int(dataLenBytes[0])<<8 | int(dataLenBytes[1])
 
-			valueLen := dataLen // 协议明确单位是字节，无需再转换
+			// 线圈/离散输入(type 0/1): dataLen是输入点数(bit数)，需转换为字节数
+			// 寄存器(type 3/4): dataLen是寄存器数，每个寄存器2字节
+			valueLen := dataLen
+			if modbusType == 0 || modbusType == 1 {
+				valueLen = (dataLen + 7) / 8
+				g.Log().Info(ctx, fmt.Sprintf("线圈/离散输入: dataLen=%d bits -> valueLen=%d bytes", dataLen, valueLen))
+			} else {
+				valueLen = dataLen * 2
+				g.Log().Info(ctx, fmt.Sprintf("寄存器: dataLen=%d registers -> valueLen=%d bytes", dataLen, valueLen))
+			}
 
 			// 3. 读取实际数据值
 			dataValueBytes, err := scanner.Next(valueLen)
 			if err != nil {
-				g.Log().Error(ctx, fmt.Sprintf("解析第%d个数据项值失败", i), err)
+				g.Log().Error(ctx, fmt.Sprintf("解析第%d个数据项值失败: dataLen=%d valueLen=%d 剩余=%d", i, dataLen, valueLen, remaining), err)
 				continue
 			}
+
+			g.Log().Info(ctx, fmt.Sprintf("数据项[%d]: 从站=%d 类型=%d 地址=%d dataLen=%d valueLen=%d 数据=%s 剩余字节=%d",
+				i, slaveAddr, modbusType, baseAddr, dataLen, valueLen, hex.EncodeToString(dataValueBytes), remaining))
 
 			remaining -= (6 + valueLen) // 减去已消耗的头部和数据字节
 
 			// 使用新的解析逻辑处理数据
 			if len(cacheVars) > 0 {
-				g.Log().Debug(ctx, fmt.Sprintf("使用新的解析逻辑处理数据项[%d]", i))
+				g.Log().Info(ctx, fmt.Sprintf("使用新解析逻辑处理数据项[%d], 缓存变量数=%d", i, len(cacheVars)))
 				ParseAndWriteData(ctx, devSerial, slaveAddr, modbusType, baseAddr, dataValueBytes, cacheVars)
 			} else {
-				g.Log().Debug(ctx, fmt.Sprintf("缓存变量为空，使用降级逻辑处理数据项[%d]", i))
+				g.Log().Info(ctx, fmt.Sprintf("缓存变量为空，使用降级逻辑处理数据项[%d]", i))
 				// 直接以hex格式写入原始数据
 				dataItem := &model.DataItem{
 					DevSerial:  devSerial,
@@ -917,12 +931,6 @@ func (s *sPayload) PayloadHandler(ctx context.Context, devSerial string, payload
 				}
 				WritdataToInflux(ctx, org, bucket, dataItem, Featurescode)
 			}
-
-			// 5. 结构化日志
-			g.Log().Debug(ctx, fmt.Sprintf(
-				"数据上发项[%d]：从站地址[%d] 类型[%d] 起始地址[%d] 长度[%d字节] 原始值[%s]",
-				i, slaveAddr, modbusType, baseAddr, dataLen, hex.EncodeToString(dataValueBytes),
-			))
 		}
 
 		DevUpdate = &model.DevUpdateItem{
@@ -1176,7 +1184,7 @@ func WriteEnhancedDataToInflux(ctx context.Context, org, bucket string, dataItem
 		"modbus_type": fmt.Sprintf("%d", dataItem.ModbusType),
 		"data_addr":   fmt.Sprintf("%d", dataItem.DataAddr),
 		"data_type":   dataItem.DataType,
-		"scope":        scope,
+		"scope":       scope,
 	}
 
 	fields := map[string]interface{}{
@@ -1200,12 +1208,15 @@ func WriteEnhancedDataToInflux(ctx context.Context, org, bucket string, dataItem
 		fields["parsed_value"] = scanner.ValueToString(dataItem.DataType, dataItem.ParsedValue)
 	}
 
+	g.Log().Info(ctx, fmt.Sprintf("WriteEnhancedDataToInflux: serial=%s slave=%d type=%d addr=%d tags=%v fields=%v",
+		dataItem.DevSerial, dataItem.SlaveAddr, dataItem.ModbusType, dataItem.DataAddr, tags, fields))
+
 	point := write.NewPoint("DataItem", tags, fields, time.Now())
 	if err := writeAPI.WritePoint(ctx, point); err != nil {
 		g.Log().Error(ctx, "写入增强数据到InfluxDB失败", dataItem, err)
 		return err
 	}
-	g.Log().Debug(ctx, "写入增强数据到InfluxDB成功", dataItem)
+	g.Log().Info(ctx, fmt.Sprintf("写入增强数据到InfluxDB成功: serial=%s type=%d addr=%d", dataItem.DevSerial, dataItem.ModbusType, dataItem.DataAddr))
 	return nil
 }
 
@@ -1213,49 +1224,47 @@ func WriteEnhancedDataToInflux(ctx context.Context, org, bucket string, dataItem
 func ParseAndWriteData(ctx context.Context, devSerial string, slaveAddr int, modbusType int, baseAddr int, data []byte, cacheVars []*model.Variables) {
 	org := g.Cfg().MustGet(ctx, "influxdb.org").String()
 	bucket := g.Cfg().MustGet(ctx, "influxdb.bucket").String()
-	
-	g.Log().Debug(ctx, fmt.Sprintf("ParseAndWriteData: 设备[%s] 从站[%d] 类型[%d] 起始地址[%d] 数据[%x] 数据长度[字节:%d]", devSerial, slaveAddr, modbusType, baseAddr, data, len(data)))
-	g.Log().Debug(ctx, fmt.Sprintf("缓存变量数量: %d", len(cacheVars)))
+
+	g.Log().Info(ctx, fmt.Sprintf("ParseAndWriteData: 设备[%s] 从站[%d] 类型[%d] 起始地址[%d] 数据[%x] 长度[%d字节]", devSerial, slaveAddr, modbusType, baseAddr, data, len(data)))
+	g.Log().Info(ctx, fmt.Sprintf("缓存变量数量: %d", len(cacheVars)))
 
 	// 计算这次读取的寄存器数量或线圈数量
 	var readRegCount int
 	if modbusType == 0 || modbusType == 1 {
-		// 线圈/离散输入: 字节数 * 8
 		readRegCount = len(data) * 8
 	} else {
-		// 寄存器: 字节数作为数据点数
 		readRegCount = len(data)
 	}
 	endAddr := baseAddr + readRegCount - 1
-	g.Log().Debug(ctx, fmt.Sprintf("读取范围: 地址[%d] 到 [%d], 共[%d]个", baseAddr, endAddr, readRegCount))
+	g.Log().Info(ctx, fmt.Sprintf("读取范围: 地址[%d] 到 [%d], 共[%d]个", baseAddr, endAddr, readRegCount))
 
 	for _, cacheVar := range cacheVars {
-		g.Log().Debug(ctx, fmt.Sprintf("检查变量: %s 设备[%d] 类型[%s] 地址[%d] 长度[%s]", 
+		g.Log().Info(ctx, fmt.Sprintf("检查变量: %s 设备[%d] 类型[%s] 地址[%d] 长度[%s]",
 			cacheVar.VarName, cacheVar.ModbusDevice, cacheVar.ModbusType, cacheVar.ModbusAddr, cacheVar.DataLen))
-		
+
 		if cacheVar.ModbusDevice != slaveAddr {
-			g.Log().Debug(ctx, fmt.Sprintf("  跳过: 从站不匹配"))
+			g.Log().Info(ctx, fmt.Sprintf("  跳过[%s]: 从站不匹配(期望%d, 实际%d)", cacheVar.VarName, cacheVar.ModbusDevice, slaveAddr))
 			continue
 		}
 		if cacheVar.ModbusType != fmt.Sprintf("%d", modbusType) {
-			g.Log().Debug(ctx, fmt.Sprintf("  跳过: 类型不匹配"))
+			g.Log().Info(ctx, fmt.Sprintf("  跳过[%s]: 类型不匹配(期望%s, 实际%d)", cacheVar.VarName, cacheVar.ModbusType, modbusType))
 			continue
 		}
 
 		modbusAddr := cacheVar.ModbusAddr
-		
+
 		// 解析变量长度（DataLen 是字符串）
 		varLen, err := strconv.Atoi(cacheVar.DataLen)
 		if err != nil || varLen <= 0 {
 			varLen = 1
 		}
 		varEndAddr := modbusAddr + varLen - 1
-		
-		g.Log().Debug(ctx, fmt.Sprintf("  变量地址范围: [%d-%d], 读取范围: [%d-%d]", modbusAddr, varEndAddr, baseAddr, endAddr))
-		
+
+		g.Log().Info(ctx, fmt.Sprintf("  变量地址范围: [%d-%d], 读取范围: [%d-%d]", modbusAddr, varEndAddr, baseAddr, endAddr))
+
 		// 检查变量是否完全在读取范围内
 		if modbusAddr < baseAddr || varEndAddr > endAddr {
-			g.Log().Debug(ctx, fmt.Sprintf("  跳过: 变量不在读取范围内"))
+			g.Log().Info(ctx, fmt.Sprintf("  跳过[%s]: 变量不在读取范围内(var=[%d-%d], read=[%d-%d])", cacheVar.VarName, modbusAddr, varEndAddr, baseAddr, endAddr))
 			continue
 		}
 
@@ -1265,39 +1274,36 @@ func ParseAndWriteData(ctx context.Context, devSerial string, slaveAddr int, mod
 
 		// 先迁移旧数据类型
 		dataType := scanner.MigrateOldDataType(cacheVar.DataType)
-		g.Log().Debug(ctx, fmt.Sprintf("  原始DataType:%s, 迁移后:%s", cacheVar.DataType, dataType))
+		g.Log().Info(ctx, fmt.Sprintf("  原始DataType:%s, 迁移后:%s", cacheVar.DataType, dataType))
 
 		var boolValue bool
 		var isCoilOrDiscrete = false
 
 		// 针对线圈/离散输入类型需要特殊处理（按位处理）
 		if modbusType == 0 || modbusType == 1 {
-			// 计算位偏移量
 			bitPosition := modbusAddr - baseAddr
 			byteIdx := bitPosition / 8
 			bitIdx := bitPosition % 8
-			
-			g.Log().Debug(ctx, fmt.Sprintf("  处理线圈/离散输入: 位偏移=%d, 字节索引=%d, 位索引=%d", bitPosition, byteIdx, bitIdx))
+
+			g.Log().Info(ctx, fmt.Sprintf("  处理线圈/离散输入: 位偏移=%d, 字节索引=%d, 位索引=%d", bitPosition, byteIdx, bitIdx))
 
 			if byteIdx < 0 || byteIdx >= len(data) {
-				g.Log().Debug(ctx, fmt.Sprintf("  跳过: 字节索引超出范围"))
+				g.Log().Info(ctx, fmt.Sprintf("  跳过[%s]: 字节索引=%d 超出范围(数据长度=%d)", cacheVar.VarName, byteIdx, len(data)))
 				continue
 			}
 
-			// 提取该位的值
 			bitVal := (data[byteIdx] >> bitIdx) & 0x01
 			boolValue = bitVal != 0
 			varData = data[byteIdx : byteIdx+1]
 			byteNum = 1
 			parsedValue = boolValue
 			isCoilOrDiscrete = true
-			g.Log().Debug(ctx, fmt.Sprintf("  位值: %d -> 布尔值: %t", bitVal, boolValue))
+			g.Log().Info(ctx, fmt.Sprintf("  位值: %d -> 布尔值: %t", bitVal, boolValue))
 		} else {
-			// 寄存器类型正常处理（按字节处理）
 			offset := modbusAddr - baseAddr
-			g.Log().Debug(ctx, fmt.Sprintf("  处理寄存器: 偏移=%d", offset))
+			g.Log().Info(ctx, fmt.Sprintf("  处理寄存器: 变量[%s] 偏移=%d 数据长度=%d", cacheVar.VarName, offset, len(data)))
 			if offset < 0 || offset >= len(data) {
-				g.Log().Debug(ctx, fmt.Sprintf("  跳过: 偏移超出范围"))
+				g.Log().Info(ctx, fmt.Sprintf("  跳过[%s]: 偏移=%d 超出范围(数据长度=%d)", cacheVar.VarName, offset, len(data)))
 				continue
 			}
 
@@ -1372,6 +1378,10 @@ func ParseAndWriteData(ctx context.Context, devSerial string, slaveAddr int, mod
 			}
 		}
 
+		g.Log().Info(ctx, fmt.Sprintf("  变量[%s]匹配成功，准备写入: slave=%d type=%d addr=%d raw=%s parsed=%v bool=%v",
+			cacheVar.VarName, slaveAddr, modbusType, modbusAddr, enhancedItem.RawValue, enhancedItem.ParsedValue, boolValue))
+
 		WriteEnhancedDataToInflux(ctx, org, bucket, enhancedItem)
+		g.Log().Info(ctx, fmt.Sprintf("  WriteEnhancedDataToInflux 调用完成"))
 	}
 }

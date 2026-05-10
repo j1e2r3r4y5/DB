@@ -15,14 +15,14 @@ import struct
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simulator_v3.core.mqtt_client import MQTTClientManager
-from simulator_v3.core.config_manager import ConfigManager
-from simulator_v3.protocol.handler import HandlerRegistry
-from simulator_v3.protocol.heartbeat_handler import HeartbeatHandler
-from simulator_v3.protocol.data_config_handler import DataConfigHandler
-from simulator_v3.data.device_pool import DevicePool
-from simulator_v3.modbus.tcp_server import ModbusTCPServer
-from simulator_v3.modbus.request_handler import ModbusRequestHandler
+from core.mqtt_client import MQTTClientManager
+from core.config_manager import ConfigManager
+from protocol.handler import HandlerRegistry
+from protocol.heartbeat_handler import HeartbeatHandler
+from protocol.data_config_handler import DataConfigHandler
+from data.device_pool import DevicePool
+from modbus.tcp_server import ModbusTCPServer
+from modbus.request_handler import ModbusRequestHandler
 
 
 class TestManual(unittest.TestCase):

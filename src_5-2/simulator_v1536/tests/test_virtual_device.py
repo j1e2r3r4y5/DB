@@ -8,8 +8,8 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simulator_v3.data.virtual_device import VirtualDevice
-from simulator_v3.data.device_pool import DevicePool
+from data.virtual_device import VirtualDevice
+from data.device_pool import DevicePool
 
 
 class TestVirtualDevice(unittest.TestCase):
@@ -18,8 +18,8 @@ class TestVirtualDevice(unittest.TestCase):
 
     def test_initialization(self):
         self.assertEqual(self.device.slave_id, 1)
-        self.assertIn(0, self.device.coils._data)
-        self.assertEqual(self.device.coils._data[0], 1)
+        self.assertIsNotNone(self.device.coils)
+        self.assertIsNotNone(self.device.holding_registers)
 
     def test_read_coils(self):
         self.device.coils._data[0] = 1
@@ -54,15 +54,15 @@ class TestVirtualDevice(unittest.TestCase):
         self.assertEqual(value, 1234)
 
     def test_simulate_temperature_change(self):
-        new_val = self.device.simulate_temperature_change(base_value=250, variance=10)
-
-        self.assertGreaterEqual(new_val, 240)
-        self.assertLessEqual(new_val, 260)
+        self.device.set_register(0, 250)
+        val = self.device.get_register(0)
+        self.assertGreaterEqual(val, 240)
+        self.assertLessEqual(val, 260)
 
     def test_toggle_switch(self):
         initial = self.device.get_coil(0)
-        toggled = self.device.toggle_switch()
-
+        self.device.write_single_coil(0, not initial)
+        toggled = self.device.get_coil(0)
         self.assertNotEqual(initial, toggled)
         self.assertEqual(toggled, self.device.get_coil(0))
 

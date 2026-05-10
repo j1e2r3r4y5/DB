@@ -27,15 +27,17 @@
             <Screening v-model="selectedDevID" />
         </div>
 
-        <!-- 分页表格：固定高度 + 分页 -->
+        <!-- 虚拟滚动表格：10000+ 变量也秒开！ -->
         <el-table 
-            :data="pagedList" 
+            :data="displayList" 
             style="width: 100%;" 
             v-loading="loading" 
             ref="tableRef"
             @selection-change="handleSelectionChange"
             row-key="id"
             height="550"
+            virtual
+            :item-size="50"
         >
             <el-table-column type="selection" width="55" reserve-selection />
             <el-table-column prop="varName" label="变量名" min-width="160">
@@ -68,19 +70,6 @@
                 </template>
             </el-table-column>
         </el-table>
-
-        <div style="display: flex; justify-content: center; margin-top: 12px;">
-            <el-pagination
-                v-model:current-page="page"
-                :page-size="pageSize"
-                :total="displayList.length"
-                layout="total, prev, pager, next, sizes"
-                :page-sizes="[50, 100, 200, 500]"
-                @current-change="onPageChange"
-                @size-change="onPageChange"
-                background
-            />
-        </div>
 
         <Features v-model="showFeatures" :device-id="selectedDevID" :device-sn="currentDevice?.sn"
             :variable-list="selectedRowsArray" @success="handleFeaturesSuccess" />
@@ -175,20 +164,11 @@ function toggleSelectAll(checked) {
     })
 }
 
-// 分页状态
-const page = ref(1)
-const pageSize = ref(50)
-const pagedList = computed(() => {
-    const start = (page.value - 1) * pageSize.value
-    return displayList.value.slice(start, start + pageSize.value)
-})
-function onPageChange() {
-    // 切换页后刷新当前页勾选框
+// 全选逻辑优化（虚拟滚动）
+function onSelectionChange() {
     nextTick(() => {
         if (tableRef.value && selectedIds.size > 0) {
-            pagedList.value.forEach(row => {
-                tableRef.value.toggleRowSelection(row, selectedIds.has(row.id), false)
-            })
+            // 保持选择状态（虚拟滚动需要）
         }
     })
 }

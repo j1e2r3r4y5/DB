@@ -10,7 +10,7 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simulator_v3.data.data_scheduler import DataScheduler, DataCollectionJob
+from data.data_scheduler import DataScheduler, DataCollectionJob
 
 
 class TestDataCollectionJob(unittest.TestCase):

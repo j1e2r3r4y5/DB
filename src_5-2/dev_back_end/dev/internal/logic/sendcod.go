@@ -258,10 +258,11 @@ func (p *PayloadOptimizer) Optimize(items []model.Entry) ([]model.Entry, *model.
 		})
 	}
 
-	// 计算原始payload（默认优化器的结果）
+	// 计算原始payload（用默认优化器合并且已合并后的结果，即"同区同站合并"的05上报包长度）
 	defaultOpt := &DefaultOptimizer{}
 	_, defaultResult, _ := defaultOpt.Optimize(items)
-	originalPayload := defaultResult.OriginalPayload
+	originalPayload := defaultResult.OptimizedPayload
+	originalSegments := defaultResult.OptimizedSegments
 
 	savedBytes := originalPayload - bestPayload
 	savedPercent := 0.0
@@ -277,7 +278,7 @@ func (p *PayloadOptimizer) Optimize(items []model.Entry) ([]model.Entry, *model.
 		OptimizedPayload:  bestPayload,
 		SavedBytes:        savedBytes,
 		SavedPercent:      savedPercent,
-		OriginalSegments:  len(items),
+		OriginalSegments:  originalSegments,
 		OptimizedSegments: len(result),
 		ExecutionTimeMs:   totalTime.Milliseconds(),
 	}

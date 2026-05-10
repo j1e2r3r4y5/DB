@@ -24,6 +24,8 @@ main
 /dev
 *.test
 *.out
+coverage
+*.prof
 
 # IDE
 .idea/

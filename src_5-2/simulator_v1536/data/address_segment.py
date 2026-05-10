@@ -96,14 +96,17 @@ class AddressSegmentManager:
                     simulation_type="constant"  # 默认常量，不变化
                 )
                 
-                # 可选字段 - 简化处理
+                # 可选字段映射
+                # item[4]=name, item[5]=data_type, item[6]=unit, item[7]=init_value,
+                # item[8]=min_value, item[9]=max_value, item[10]=simulation_type
                 if len(item) > 4 and str(item[4]).strip() not in ['', '-', 'None']:
                     segment.name = str(item[4])
                 if len(item) > 5 and str(item[5]).strip() not in ['', '-', 'None']:
                     segment.data_type = str(item[5])
                 if len(item) > 6 and str(item[6]).strip() not in ['', '-', 'None']:
-                    # 处理初始值
-                    val_str = str(item[6])
+                    segment.unit = str(item[6])
+                if len(item) > 7 and str(item[7]).strip() not in ['', '-', 'None']:
+                    val_str = str(item[7])
                     if segment.data_type == 'bool':
                         segment.init_value = val_str.lower() in ['1', 'true', 'yes', 'on']
                     elif segment.data_type in ['float32', 'float64']:
@@ -118,6 +121,18 @@ class AddressSegmentManager:
                             segment.init_value = val_str
                     else:
                         segment.init_value = val_str
+                if len(item) > 8 and str(item[8]).strip() not in ['', '-', 'None']:
+                    try:
+                        segment.min_value = float(item[8])
+                    except:
+                        segment.min_value = item[8]
+                if len(item) > 9 and str(item[9]).strip() not in ['', '-', 'None']:
+                    try:
+                        segment.max_value = float(item[9])
+                    except:
+                        segment.max_value = item[9]
+                if len(item) > 10 and str(item[10]).strip() not in ['', '-', 'None']:
+                    segment.simulation_type = str(item[10])
                 
                 if self.add_segment(segment):
                     count += 1

@@ -2,6 +2,61 @@
 
 所有重要的项目变更都将记录在此文件中。
 
+## [1.10.0] - 2026-05-10
+
+### 优化前基准数据对齐与测试完善
+
+#### 优化前基准统一（前后端对齐
+1. **统一优化前基准为 DefaultOptimizer 合并后结果
+   - 问题：前端显示合并后05上报长度，但后端返回原始未合并长度，导致显示不一致
+   - 修复：后端将 DefaultOptimizer 合并后的结果作为优化前基准
+   - 修改文件：`dev_back_end/dev/internal/logic/sendcod.go`
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+2. **前端同步显示优化前基线
+   - 移除 rawUploadLength 相关计算
+   - 直接使用合并后的 uploadLength 作为优化前基线
+   - 显示文字改为"合并后05上报数据包长度（优化前基线）"
+   - 修改文件：`4G_dev_front/4G_dev/src/components/variables/Features.vue`
+
+#### PayloadOptimizer 单元测试完善
+3. **完善 Go 后端单元测试
+   - 修复 gtest API 使用错误（t.Assert → t.AssertEQ，t.AssertNotNil → t.AssertNE）
+   - 新增 11 个测试用例，覆盖：
+     - 基础功能测试
+     - 边界条件测试
+     - 性能基准测试
+   - 测试覆盖率从 20.2% 提升至 20.7%
+   - 修改文件：`dev_back_end/dev/internal/logic/sendcod_test.go`
+
+#### Python 模拟器修复
+4. **修复 address_segment.py 中 unit 与 init_value 字段混淆
+   - 问题：unit 字段内容（如"°C"、"%RH"）被错误地解析为 init_value
+   - 修复：正确分离 unit（第7列）与 init_value（第8列）的解析
+   - 修改文件：`simulator_v1536/data/address_segment.py`
+
+5. **修复 Python 单元测试导入路径
+   - 问题：测试文件中错误引用 simulator_v3 模块，导致导入失败
+   - 修复：移除所有测试文件中的 simulator_v3 前缀，使用相对导入
+   - 修改文件：`simulator_v1536/tests/test_*.py`（共10个测试文件）
+   - 所有113个测试用例全部通过
+
+#### 测试执行与验证
+6. **执行完整测试套件
+   - Go 后端单元测试：所有测试通过
+   - Python 模拟器单元测试：113个测试用例全部通过
+   - 端到端测试：正常执行
+   - 测试覆盖率报告生成
+
+### 优化建议
+7. **P0 级别优化已完成
+   - PayloadOptimizer 单元测试完善
+   - 优化前基准前后端对齐
+   - Python 测试修复
+   - address_segment.py 字段解析修复
+
+---
+
 ## [1.9.0] - 2026-05-09
 
 ### 沙箱功能（完整隔离环境）

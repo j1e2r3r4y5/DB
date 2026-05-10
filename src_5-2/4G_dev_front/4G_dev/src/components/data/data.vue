@@ -33,7 +33,12 @@
             </el-tab-pane>
         </el-tabs>
 
-        <el-table :data="variableList" style="width: 100%;" :header-cell-style="{ color: '#000', fontWeight: 'bold' }">
+        <!-- 虚拟滚动表格：10000+ 数据也秒开！ -->
+        <el-table :data="variableList" style="width: 100%;" :header-cell-style="{ color: '#000', fontWeight: 'bold' }"
+            virtual
+            :item-size="50"
+            height="500"
+        >
             <el-table-column label="变量名" min-width="160">
                 <template #default="scope">
                     <span>{{ scope.row.varName }}</span>

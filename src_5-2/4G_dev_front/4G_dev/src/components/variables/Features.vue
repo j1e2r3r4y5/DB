@@ -44,7 +44,7 @@
         <div v-if="localVariableList.length > 0" style="margin-bottom: 12px;">
             <el-alert type="success" show-icon :closable="false">
                 <div style="font-weight: bold; margin-bottom: 8px;">
-                    未来05上报数据包预计长度：<strong>{{ uploadLength }}</strong> 字节
+                    合并后05上报数据包长度（优化前基线）：<strong>{{ uploadLength }}</strong> 字节
                 </div>
                 <div style="font-size: 13px; line-height: 1.6;">
                     <div style="margin-bottom: 4px;">

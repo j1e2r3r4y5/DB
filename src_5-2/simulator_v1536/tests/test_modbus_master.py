@@ -15,10 +15,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 class TestModbusConnectionPool(unittest.TestCase):
     """Test Modbus connection pool functionality"""
 
-    @patch('simulator_v3.core.modbus_master.socket')
+    @patch('core.modbus_master.socket')
     def test_connection_uses_keepalive(self, mock_socket):
         """Test that connections use SO_KEEPALIVE option"""
-        from simulator_v3.core.modbus_master import ModbusMaster
+        from core.modbus_master import ModbusMaster
 
         mock_sock_instance = MagicMock()
         mock_socket.socket.return_value = mock_sock_instance
@@ -31,10 +31,10 @@ class TestModbusConnectionPool(unittest.TestCase):
         calls = mock_sock_instance.setsockopt.call_args_list
         self.assertTrue(any('SO_KEEPALIVE' in str(c) or len(c) >= 3 for c in calls))
 
-    @patch('simulator_v3.core.modbus_master.socket')
+    @patch('core.modbus_master.socket')
     def test_connection_timeout_set(self, mock_socket):
         """Test that connection timeout is properly set"""
-        from simulator_v3.core.modbus_master import ModbusMaster
+        from core.modbus_master import ModbusMaster
 
         mock_sock_instance = MagicMock()
         mock_socket.socket.return_value = mock_sock_instance
@@ -45,10 +45,10 @@ class TestModbusConnectionPool(unittest.TestCase):
 
         mock_sock_instance.settimeout.assert_called()
 
-    @patch('simulator_v3.core.modbus_master.socket')
+    @patch('core.modbus_master.socket')
     def test_get_connection_validates_with_recv(self, mock_socket):
         """Test that get_connection validates connection with recv instead of send"""
-        from simulator_v3.core.modbus_master import ModbusMaster, ModbusConnection
+        from core.modbus_master import ModbusMaster, ModbusConnection
 
         mock_sock_instance = MagicMock()
         mock_sock_instance.recv.return_value = b'\x00\x01\x00\x00\x00\x05\x00'
@@ -74,7 +74,7 @@ class TestModbusConnectionClass(unittest.TestCase):
 
     def test_connection_initialization(self):
         """Test that ModbusConnection initializes correctly"""
-        from simulator_v3.core.modbus_master import ModbusConnection
+        from core.modbus_master import ModbusConnection
 
         mock_sock = MagicMock()
         current_time = time.time()

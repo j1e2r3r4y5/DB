@@ -10,15 +10,15 @@ import struct
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from simulator_v3.core.config_manager import ConfigManager
-from simulator_v3.data.device_pool import DevicePool
-from simulator_v3.data.virtual_device import VirtualDevice
-from simulator_v3.data.data_scheduler import DataScheduler, DataCollectionJob
-from simulator_v3.protocol.handler import HandlerRegistry
-from simulator_v3.protocol.heartbeat_handler import HeartbeatHandler
-from simulator_v3.protocol.data_config_handler import DataConfigHandler
-from simulator_v3.modbus.tcp_server import ModbusTCPServer
-from simulator_v3.modbus.request_handler import ModbusRequestHandler
+from core.config_manager import ConfigManager
+from data.device_pool import DevicePool
+from data.virtual_device import VirtualDevice
+from data.data_scheduler import DataScheduler, DataCollectionJob
+from protocol.handler import HandlerRegistry
+from protocol.heartbeat_handler import HeartbeatHandler
+from protocol.data_config_handler import DataConfigHandler
+from modbus.tcp_server import ModbusTCPServer
+from modbus.request_handler import ModbusRequestHandler
 
 
 class TestIntegrationDataFlow(unittest.TestCase):
@@ -33,7 +33,7 @@ class TestIntegrationDataFlow(unittest.TestCase):
         payload = bytes([
             0x04,
             0x00, 0x01,
-            0x01, 0x03, 0x00, 0x00, 0x00, 0x02
+            0x01, 0x04, 0x00, 0x00, 0x00, 0x02
         ])
 
         result = data_config_handler._handle_download_data_config(payload)
