@@ -1,11 +1,15 @@
-<script setup>
-import Login from './login.vue'
-
-</script>
-
 <template>
-  <!-- <Login /> -->
+  <OfflineBanner />
   <router-view />
 </template>
 
-<style scoped></style>
+<script setup>
+import OfflineBanner from '../components/OfflineBanner.vue'
+</script>
+
+<style>
+#app {
+  width: 100%;
+  height: 100vh;
+}
+</style>

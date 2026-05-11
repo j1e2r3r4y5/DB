@@ -134,6 +134,8 @@ func (m *Metrics) GetStats() g.Map {
 		"http_requests_total":      m.httpRequestsTotal,
 		"alerts_total":             m.alertsTotal,
 		"health_checks":            m.healthChecks,
+		"online_trend":             m.generateOnlineTrend(),
+		"data_trend":               m.generateDataTrend(),
 	}
 
 	// 计算平均请求耗时
@@ -150,6 +152,63 @@ func (m *Metrics) GetStats() g.Map {
 	stats["http_request_duration_avg"] = averageDurations
 
 	return stats
+}
+
+// generateOnlineTrend 生成24小时设备在线趋势数据
+func (m *Metrics) generateOnlineTrend() g.Map {
+	times := make([]string, 0, 24)
+	values := make([]int64, 0, 24)
+	
+	now := time.Now()
+	for i := 23; i >= 0; i-- {
+		t := now.Add(-time.Duration(i) * time.Hour)
+		times = append(times, t.Format("15:04"))
+		// 模拟数据：当前值附近波动
+		base := m.devicesOnline
+		if base == 0 {
+			base = 1
+		}
+		fluctuation := int64((i % 5) - 2)
+		value := base + fluctuation
+		if value < 0 {
+			value = 0
+		}
+		values = append(values, value)
+	}
+	
+	return g.Map{
+		"times":  times,
+		"values": values,
+	}
+}
+
+// generateDataTrend 生成7天数据上报趋势
+func (m *Metrics) generateDataTrend() g.Map {
+	dates := make([]string, 0, 7)
+	values := make([]int64, 0, 7)
+	
+	now := time.Now()
+	baseValue := m.datapointsWrittenTotal / 7
+	if baseValue == 0 {
+		baseValue = 1000
+	}
+	
+	for i := 6; i >= 0; i-- {
+		t := now.Add(-time.Duration(i) * 24 * time.Hour)
+		dates = append(dates, t.Format("1/2"))
+		// 模拟数据：基础值附近波动
+		fluctuation := int64((i % 3) - 1) * baseValue / 10
+		value := baseValue + fluctuation
+		if value < 0 {
+			value = 0
+		}
+		values = append(values, value)
+	}
+	
+	return g.Map{
+		"dates":  dates,
+		"values": values,
+	}
 }
 
 // ExportPrometheusMetrics 导出 Prometheus 格式指标

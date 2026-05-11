@@ -69,6 +69,7 @@
 
 <script setup>
 import { ref, onMounted, computed } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '../api'
 import Pagination from '../composables/Pagination.vue'
 const baudMap = {
@@ -124,9 +125,9 @@ async function fetchDeviceList() {
     }
 }
 onMounted(fetchDeviceList)
-const emit = defineEmits(["open-data-list"])
+const router = useRouter()
 function handleGotoDataList(id) {
-    emit("open-data-list", id)
+    router.push(`/home/data/${id}`)
 }
 </script>
 <style scoped>

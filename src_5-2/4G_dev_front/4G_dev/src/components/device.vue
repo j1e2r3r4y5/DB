@@ -1,5 +1,17 @@
 <template>
     <div class="device-list-wrapper" style="position: relative; min-height: 400px; width: 100%;">
+        <el-alert
+            v-if="activeOp"
+            :title="`${opLabels[activeOp] || activeOp} 模式`"
+            type="warning"
+            show-icon
+            :closable="true"
+            @close="exitOpMode"
+            style="margin-bottom: 16px;">
+            <template #default>
+                <span>点击列表中任意设备即可{{ opLabels[activeOp] || activeOp }}（可连续操作，关闭此提示退出模式）</span>
+            </template>
+        </el-alert>
         <el-button-group style="float: right; margin-bottom: 16px;">
             <el-button :type="viewMode === 'card' ? 'primary' : 'default'" @click="viewMode = 'card'">卡片</el-button>
             <el-button :type="viewMode === 'table' ? 'primary' : 'default'" @click="viewMode = 'table'">列表</el-button>
@@ -8,8 +20,7 @@
         <div v-if="viewMode === 'table'">
             <el-table :data="pagedDeviceList" stripe style="width: 100%; background: #fff;"
                 :header-cell-style="{ color: '#222', fontWeight: 'bold' }" :row-style="rowStyle"
-                @selection-change="handleSelectionChange" ref="multipleTableRef" :row-key="row => row.id">
-                <el-table-column type="selection" width="50" :reserve-selection="true" />
+                @row-click="handleRowClick" ref="multipleTableRef" :row-key="row => row.id">
                 <el-table-column prop="name" label="设备名称" min-width="150" />
                 <el-table-column prop="sn" label="设备序列号" min-width="150" />
                 <el-table-column prop="location" label="设备位置" min-width="150" />
@@ -27,28 +38,30 @@
                         {{ baudMap[scope.row.baud] || scope.row.baud }}
                     </template>
                 </el-table-column>
-                <!-- <el-table-column prop="chengeFlag" label="修改标志" min-width="120" /> -->
-                <el-table-column v-if="currentUserType !== 3" label="操作" width="100" fixed="right">
+                <el-table-column v-if="currentUserType !== 3" label="编辑设备" min-width="80" align="center">
                     <template #default="scope">
-                        <el-dropdown trigger="hover" placement="bottom-start">
-                            <span class="op-dropdown-trigger">操作</span>
-                            <template #dropdown>
-                                <el-dropdown-menu>
-                                    <!-- <el-dropdown-item @click="handleShowVars(scope.row)">数据</el-dropdown-item> -->
-                                    <el-dropdown-item @click="handleShowVars(scope.row)">变量管理</el-dropdown-item>
-                                    <el-dropdown-item @click="handleEditDevice(scope.row)">编辑设备</el-dropdown-item>
-                                    <el-dropdown-item @click="handleDeleteDevice(scope.row)">删除设备</el-dropdown-item>
-                                    <el-dropdown-item @click="handleDownPayload(scope.row)">配置下发</el-dropdown-item>
-                                    <el-dropdown-item @click="handleUpdateDevice(scope.row)">更新设备</el-dropdown-item>
-                                </el-dropdown-menu>
-                            </template>
-                        </el-dropdown>
+                        <span class="action-link" @click.stop="handleEditDevice(scope.row)">编辑设备</span>
+                    </template>
+                </el-table-column>
+                <el-table-column v-if="currentUserType !== 3" label="配置下发" min-width="80" align="center">
+                    <template #default="scope">
+                        <span class="action-link" @click.stop="handleDownPayload(scope.row)">配置下发</span>
+                    </template>
+                </el-table-column>
+                <el-table-column v-if="currentUserType !== 3" label="更新设备" min-width="80" align="center">
+                    <template #default="scope">
+                        <span class="action-link" @click.stop="handleUpdateDevice(scope.row)">更新设备</span>
+                    </template>
+                </el-table-column>
+                <el-table-column v-if="currentUserType !== 3" label="删除设备" min-width="80" align="center">
+                    <template #default="scope">
+                        <span class="action-link danger" @click.stop="handleDeleteDevice(scope.row)">删除设备</span>
                     </template>
                 </el-table-column>
             </el-table>
         </div>
         <div v-else-if="viewMode === 'card'" class="device-card-list">
-            <div class="device-card" v-for="device in pagedDeviceList" :key="device.id">
+            <div class="device-card" v-for="device in pagedDeviceList" :key="device.id" @click="handleCardClick(device)" style="cursor: pointer;">
                 <div class="device-card-header">
                     <span class="device-card-title">{{ device.name }}</span>
                     <span class="device-card-status" :style="{ color: device.status === '离线' ? 'red' : 'green' }">{{
@@ -61,17 +74,6 @@
                     <div>发送模式：{{ device.sendmodel }}</div>
                     <div>{{ device.sendmodel === '00' ? '定时发送' : '触发地址' }}：{{ device.config }}</div>
                     <div>波特率：{{ baudMap[device.baud] || device.baud }}</div>
-                    <!-- <div>修改标志：{{ device.chengeFlag }}</div> -->
-                </div>
-                <div class="device-card-actions" v-if="currentUserType !== 3">
-                    <el-button-group>
-                        <!-- <el-button size="small" @click="handleShowVars(device)">数据</el-button> -->
-                        <el-button size="small" @click="handleShowVars(device)">变量管理</el-button>
-                        <el-button size="small" @click="handleEditDevice(device)">编辑设备</el-button>
-                        <el-button size="small" @click="handleDownPayload(device)">配置下发</el-button>
-                        <el-button size="small" @click="handleUpdateDevice(device)">更新设备</el-button>
-                        <el-button size="small" type="danger" @click="handleDeleteDevice(device)">删除设备</el-button>
-                    </el-button-group>
                 </div>
             </div>
         </div>
@@ -104,8 +106,6 @@
             <el-button type="danger" @click="confirmDeleteDevice">删除</el-button>
         </template>
     </el-dialog>
-    <!-- <VarBydevID v-model="varDialogVisible" :device-id="currentDeviceId" /> -->
-    <!-- 下发配置弹窗 -->
     <DeviceDownDialog v-model="downDialogVisible" :row="downRow" @success="handleDownSuccess" />
 </template>
 
@@ -128,103 +128,84 @@ const baudMap = {
     '0E': '460800',
     '0F': '921600'
 }
-const bytetypeMap = {
-    '00': '0区',
-    '01': '1区',
-    '02': '2区',
-    '03': '3区',
-    '04': '4区'
-}
-import { ref, onMounted, computed, nextTick } from 'vue'
+import { ref, onMounted, computed, nextTick, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import api from '../api'
 import DeviceDownDialog from './DeviceDownDialog.vue'
 import Pagination from '../composables/Pagination.vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 const multipleTableRef = ref(null)
-const selectedRows = ref([]) // 存储跨页选中的行
-const viewMode = ref('card') // 默认展示卡片模式
-// 分页相关
+const viewMode = ref('card')
+const route = useRoute()
+const router = useRouter()
+
+const activeOp = ref('')
+const opLabels = {
+  edit: '编辑设备',
+  config: '配置下发',
+  update: '更新设备',
+  delete: '删除设备'
+}
+
+function exitOpMode() {
+  activeOp.value = ''
+  router.replace('/home/devices')
+}
+
+watch(() => route.query.op, (op) => {
+  activeOp.value = op || ''
+  if (op) {
+    ElMessage.info({
+      message: `已进入「${opLabels[op] || op}」模式，点击列表中或卡片任意设备即可${opLabels[op] || op}（可连续操作）`,
+      duration: 4000
+    })
+  }
+}, { immediate: true })
+
+function handleRowClick(row) {
+  if (!activeOp.value) return
+  const op = activeOp.value
+  executeOperation(op, row)
+}
+
+function handleCardClick(row) {
+  handleRowClick(row)
+}
+
+function executeOperation(op, row) {
+  if (op === 'edit') {
+    handleEditDevice(row)
+  } else if (op === 'config') {
+    handleDownPayload(row)
+  } else if (op === 'update') {
+    ElMessage.info(`正在更新设备「${row.name}」...`)
+    handleUpdateDevice(row)
+  } else if (op === 'delete') {
+    deleteTarget.value = row
+    deleteDialogVisible.value = true
+  }
+}
+
 const currentPage = ref(1)
 const pageSize = ref(10)
 const pageSizes = [5, 10, 20, 50, 100]
 function handlePageChange(page) {
     currentPage.value = page
-    // 页面切换时，恢复已选中的行
-    nextTick(() => {
-        restoreSelectedRows()
-    })
 }
 
 function handleSizeChange(size) {
     pageSize.value = size
-    currentPage.value = 1 // 切换每页条数时回到第一页
-    // 每页条数变化时，恢复已选中的行
-    nextTick(() => {
-        restoreSelectedRows()
-    })
+    currentPage.value = 1
 }
 
-// 处理表格选中项改变
-function handleSelectionChange(selection) {
-    // 更新当前页选中项到全局选中数组
-    updateSelectedRows(selection)
-    // 向父组件发出事件，保持原有功能
-    emit('selection-change', selectedRows.value)
-}
-
-// 更新全局选中数组
-function updateSelectedRows(selection) {
-    // 先从全局选中数组中移除当前页的所有行
-    const currentPageIds = new Set(pagedDeviceList.value.map(row => row.id))
-    selectedRows.value = selectedRows.value.filter(row => !currentPageIds.has(row.id))
-
-    // 添加当前选中的行到全局选中数组
-    selection.forEach(row => {
-        if (!selectedRows.value.find(item => item.id === row.id)) {
-            selectedRows.value.push(row)
-        }
-    })
-}
-function handleUpdateDevice(row) {
-    ElMessage.info('正在查询设备配置...')
-    api.downpayload({
-        serial: row.sn,
-        code: '01'
-    }).then(() => {
-        ElMessage.success('更新命令已下发')
-        fetchDeviceList()
-    }).catch(() => {
-        ElMessage.error('下发失败')
-    })
-}
-function restoreSelectedRows() {
-    if (!multipleTableRef.value) return
-
-    // 清除表格当前选中状态
-    multipleTableRef.value.clearSelection()
-
-    // 对当前页的每一行，如果在全局选中数组中存在，则选中
-    pagedDeviceList.value.forEach(row => {
-        if (selectedRows.value.find(item => item.id === row.id)) {
-            multipleTableRef.value.toggleRowSelection(row, true)
-        }
-    })
-}
-
-// 计算分页后的数据
 const pagedDeviceList = computed(() => {
     const start = (currentPage.value - 1) * pageSize.value
     const end = start + pageSize.value
     return deviceList.value.slice(start, end)
 })
-// import { defineExpose } from 'vue'
-const editDialogVisible = ref(false)
-const emit = defineEmits(['selection-change', 'open-variables'])
 
-// 点击变量按钮时，发出事件让父组件切换到变量页并传入设备 ID
-function handleShowVars(row) {
-    emit('open-variables', row.id)
-}
+const editDialogVisible = ref(false)
+
 const editForm = ref({
     id: '',
     name: '',
@@ -234,16 +215,14 @@ const editForm = ref({
     configdata: '',
     baud: '',
 })
-defineExpose({ fetchDeviceList })
 const deviceList = ref([])
 function rowStyle() { return { height: '56px' } }
 
-// 获取当前用户类型
 let currentUserType = 0
 try {
     currentUserType = Number(localStorage.getItem('userType')) || 0
 } catch (e) { }
-// 保留弹窗用的 handleDownPayload，已删除旧的直接下发版本
+
 async function fetchDeviceList() {
     try {
         const res = await api.getDeviceList()
@@ -264,29 +243,22 @@ async function fetchDeviceList() {
             lastOnline: item.LatestOnline || item.latest_online || '无记录',
             sendmodel: item.Sendmodel || item.sendmodel || item.send_model || '',
             config: item.Config || item.config || item.configdata ?
-                // 先尝试直接当作十进制显示（如果数据库存的就是十进制）
                 (item.configdata || item.config) : '',
             baud: item.Baud || item.baud || '',
             chengeFlag: item.chengeFlag ?? 0,
             successFlag: item.successFlag ?? 0,
         }))
-        // console.log('设备列表:', deviceList.value)
-        // 刷新后恢复复选框状态
-        nextTick(() => {
-            restoreSelectedRows()
-        })
     } catch (e) {
         deviceList.value = []
     }
 }
-// 编辑按钮点击
+
 function handleEditDevice(row) {
     editDialogVisible.value = true
-    editForm.value = { ...row } // 填充当前设备信息
+    editForm.value = { ...row }
 }
 const deleteDialogVisible = ref(false)
 const deleteTarget = ref(null)
-// 删除按钮点击
 function handleDeleteDevice(row) {
     deleteTarget.value = row
     deleteDialogVisible.value = true
@@ -316,6 +288,16 @@ async function handleSaveEdit() {
         fetchDeviceList()
     }
 }
+function handleUpdateDevice(row) {
+    api.downpayload({
+        serial: row.sn,
+        code: '01'
+    }).then(() => {
+        ElMessage.success('更新命令已下发')
+    }).catch(() => {
+        ElMessage.error('下发失败')
+    })
+}
 const downDialogVisible = ref(false)
 const downRow = ref(null)
 function handleDownPayload(row) {
@@ -327,15 +309,9 @@ function handleDownSuccess() {
 }
 onMounted(() => {
     fetchDeviceList()
-    // 初始页面加载后，设置页面内容
-    nextTick(() => {
-        restoreSelectedRows()
-    })
 })
-// 新建按钮示例（如有新建按钮请加 v-if="currentUserType !== 3"）
 </script>
 <style scoped>
-/* 防止侧边栏折叠时内容横向溢出 */
 .device-list-wrapper {
     box-sizing: border-box;
     overflow-x: hidden;
@@ -346,7 +322,6 @@ onMounted(() => {
     min-width: 0;
 }
 
-/* 卡片模式美化：改为 grid 布局，避免行尾空白 */
 .device-card-list {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -402,43 +377,29 @@ onMounted(() => {
     line-height: 1.6;
 }
 
-.device-card-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-}
-
-.device-card-actions .el-button-group {
-    gap: 0;
-}
-
-.op-dropdown-trigger {
+.action-link {
     color: #409EFF;
-    font-weight: bold;
     cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: background 0.2s;
+    font-size: 13px;
+    white-space: nowrap;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: all 0.2s;
+    user-select: none;
 }
 
-.op-dropdown-trigger:hover {
-    background: #f0f7ff;
+.action-link:hover {
+    background: #ecf5ff;
+    color: #2a7de1;
 }
 
-::v-deep(.el-dropdown-menu__item) {
-    color: #409EFF !important;
-    font-weight: bold;
+.action-link.danger {
+    color: #f56c6c;
 }
 
-::v-deep(.el-dropdown-menu__item:hover) {
-    background: #f0f7ff;
-    color: #1765c1 !important;
-}
-
-.device-table-scroll {
-    flex: 1 1 auto;
-    overflow-y: auto;
-    min-height: 0;
+.action-link.danger:hover {
+    background: #fef0f0;
+    color: #d94a4a;
 }
 
 .pagination-bottom {

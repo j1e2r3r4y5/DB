@@ -42,10 +42,22 @@ const routes = [
         meta: { title: '设备列表' }
       },
       {
-        path: 'variables/:devId',
+        path: 'variables/:devId?',
         name: 'Variables',
         component: () => import('../components/variables/variables.vue'),
         meta: { title: '变量管理' }
+      },
+      {
+        path: 'variables/send-config',
+        name: 'SendConfigPage',
+        component: () => import('../components/variables/SendConfigPage.vue'),
+        meta: { title: '下发配置' }
+      },
+      {
+        path: 'variables/batch-delete',
+        name: 'BatchDeletePage',
+        component: () => import('../components/variables/BatchDeletePage.vue'),
+        meta: { title: '批量删除' }
       },
       {
         path: 'data/:devId',

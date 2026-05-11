@@ -8,11 +8,20 @@
             <el-button type="primary" @click="handleRecoveryVariable">撤销变更</el-button>
             <el-button type="primary" @click="showFeatures = true"
                 :disabled="!currentDevice">
-                下发</el-button>
+                下发(弹窗)
+            </el-button>
+            <el-button type="primary" @click="handleShowSendConfigPage">
+                下发配置(页面)
+            </el-button>
             <el-button type="success" @click="showImportDialog = true" :disabled="!currentDevice">
-                导入变量</el-button>
+                导入变量
+            </el-button>
             <el-button type="danger" @click="handleBatchDelete" :disabled="selectedIds.size === 0">
-                批量删除{{ selectedIds.size > 0 ? `(${selectedIds.size})` : '' }}</el-button>
+                批量删除{{ selectedIds.size > 0 ? `(${selectedIds.size})` : '' }}
+            </el-button>
+            <el-button type="danger" @click="handleBatchDeletePage">
+                批量删除(页面)
+            </el-button>
             <el-checkbox v-model="selectAllAcrossPages" :indeterminate="isIndeterminate" @change="toggleSelectAll" style="margin-left: 8px;">
                 全选所有变量{{ displayList.length > 0 ? ` (${selectedIds.size}/${displayList.length})` : '' }}
             </el-checkbox>
@@ -107,11 +116,34 @@
 
 <script setup>
 import { ref, onMounted, computed, inject, watch, markRaw, nextTick } from 'vue'
+import { useRouter } from 'vue-router'
 const props = defineProps({ initDevId: [String, Number] })
 const emit = defineEmits(['back-to-device'])
+const router = useRouter()
 
 function goBack() {
     emit('back-to-device')
+}
+
+function handleShowSendConfigPage() {
+    if (!selectedDevID.value) {
+        window.ElMessage?.warning('请先选择设备')
+        return
+    }
+    const selectedIdsArray = Array.from(selectedIds)
+    const query = { devId: selectedDevID.value }
+    if (selectedIdsArray.length > 0) {
+        query.selectedIds = selectedIdsArray.join(',')
+    }
+    router.push({ path: '/home/variables/send-config', query })
+}
+
+function handleBatchDeletePage() {
+    if (!selectedDevID.value) {
+        window.ElMessage?.warning('请先选择设备')
+        return
+    }
+    router.push({ path: '/home/variables/batch-delete', query: { devId: selectedDevID.value } })
 }
 import Screening from './Screening.vue'
 import api from '../../api'

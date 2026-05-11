@@ -30,7 +30,6 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('userId')
     localStorage.removeItem('userType')
     localStorage.removeItem('token')
-    localStorage.removeItem('currentMenu')
   }
 
   function hasPermission(requiredType) {

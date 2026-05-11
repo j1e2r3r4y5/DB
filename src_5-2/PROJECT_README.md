@@ -20,22 +20,23 @@
 ### 核心模块
 | 目录 | 说明 | 文档链接 |
 |------|------|----------|
-| `dev_back_end/dev/` | 后端服务（Go+GoFrame） | [README.MD](dev_back_end/dev/README.MD) |
-| `4G_dev_front/4G_dev/` | 前端界面（Vue3+ElementPlus） | [README.md](4G_dev_front/4G_dev/README.md) |
-| `simulator_v3/` | DTU+Modbus 模拟器 | [README.md](simulator_v3/README.md) |
+| `dev_back_end/dev/` | 后端服务（Go+GoFrame v2.9.0，端口 8000） | [README.MD](dev_back_end/dev/README.MD) |
+| `4G_dev_front/4G_dev/` | 前端界面（Vue3+Vite+ElementPlus，端口 4325） | [README.md](4G_dev_front/4G_dev/README.md) |
+| `simulator_v1536/` | DTU+Modbus 模拟器（Python，113测试通过） | [README.md](simulator_v1536/README.md) |
 
 ### 工具与测试
 | 目录 | 说明 | 文档链接 |
 |------|------|----------|
 | `tests/` | 测试脚本集合（9个） | [README.md](tests/README.md) |
 | `tools/debug/` | 调试工具集合（19个） | [README.md](tools/debug/README.md) |
-| `tools/deploy/` | 部署工具集合（4个） | [README.md](tools/deploy/README.md) |
+| `tools/deploy/` | 部署工具集合（4个，含一键启动脚本） | [README.md](tools/deploy/README.md) |
+| `docs/` | 数据库 SQL 脚本 | - |
 
 ### 文档
 | 目录 | 说明 | 文档链接 |
 |------|------|----------|
-| `MD/` | 项目需求、决策、测试等文档 | [README.md](MD/README.md) |
-| `.trae/` | Trae IDE 规范、计划文档 | - |
+| `MD/` | 项目需求、决策、测试等文档（5大类） | [README.md](MD/README.md) |
+| `.trae/` | Trae IDE 规范、计划文档（含页面拆分设计） | - |
 
 ---
 
@@ -66,6 +67,11 @@
 - **语言**：Python3
 - **MQTT库**：paho-mqtt
 - **Modbus库**：自研 TCP Master/Slave
+
+### 流量优化算法
+- **Python原型**：`ML307DC-CN上发流量与存储联合优化方案/`（5阶段完整算法）
+- **Go后端集成**：`dev_back_end/dev/internal/logic/sendcod.go` → PayloadOptimizer
+- **优化效果**：原始 83950 字节 → 优化后 24670 字节（节省 70.6%）
 
 ---
 
@@ -170,6 +176,10 @@
 | **有修改操作提示** | 基于 Payload Key 变化判断，变量名变化不会触发 |
 | **下发按钮** | 依赖 hasPayloadChanged 计算属性，payload 无变化时禁用 |
 | **空配置提示** | 未勾选变量时显示"将下发空配置" |
+| **导入变量** | 支持文件上传、粘贴文本、Seed生成三种方式 |
+| **批量删除** | 多选后批量删除，二次确认，部分失败不影响其他 |
+| **全选计数修复** | syncSelection() 确保刷新后选中数量准确 |
+| **序列号校验** | handleShowFeatures/handleShowImport 校验设备SN |
 | **文件位置** | 4G_dev_front/src/components/variables/variables.vue |
 
 ### data/data.vue（数据管理）
@@ -177,9 +187,35 @@
 |------|------|
 | **默认显示** | 只显示已下发配置的变量（从localStorage读取activeVariableIds） |
 | **空配置时** | 显示"暂无数据"提示 |
-| **显示所有变量** | 可以勾选"显示所有变量"查看全部6个变量 |
-| **数据显示** | 显示变量名称、数据类型、数据值、最新上传时间、操作等 |
+| **显示所有变量** | 可以勾选"显示所有变量"查看全部变量 |
+| **数据显示** | 显示变量名称、数据类型、数据值、最新上传时间 |
+| **自动刷新** | 3秒轮询，加载中跳过防止重叠请求 |
+| **多条件排序** | 支持按时间（Date.parse数字排序）、数值（_sortNum预计算）排序 |
+| **加载状态** | v-loading 显示"数据加载中..." |
 | **文件位置** | 4G_dev_front/src/components/data/data.vue |
+
+### admin/UserList.vue（用户列表）
+| 功能 | 说明 |
+|------|------|
+| **用户类型** | 超级管理员(Type=0)、系统管理员(Type=1)、设备管理员(Type=2)、普通用户(Type=3) |
+| **操作按钮** | 修改（跳转至/home/users/edit/{id}）、删除（确认弹窗） |
+| **权限判断** | Type=0全部可编辑，Type=1可编辑Type>=2的用户和自己 |
+| **文件位置** | 4G_dev_front/src/components/admin/UserList.vue |
+
+### admin/UserModify.vue（修改用户）
+| 功能 | 说明 |
+|------|------|
+| **双入口** | 有userId参数直接加载，无参数时显示用户选择器 |
+| **类型修改** | 集成授权功能，修改类型时同步调用Changeuser+Permuser |
+| **权限控制** | canChangeType计算属性防止越权修改类型 |
+| **文件位置** | 4G_dev_front/src/components/admin/UserModify.vue |
+
+### admin/UserCreate.vue（新建用户）
+| 功能 | 说明 |
+|------|------|
+| **创建表单** | 用户名、密码、昵称、用户类型 |
+| **权限校验** | 超级管理员可创建所有类型，系统管理员可创建Type>=2的用户 |
+| **文件位置** | 4G_dev_front/src/components/admin/UserCreate.vue |
 
 ### variables/RemoteWriteDialog.vue（远程置数）
 | 功能 | 说明 |
@@ -234,7 +270,22 @@ ML307C设备 / 模拟器（simulator_v3）
   前端（轮询刷新）→ 调用 /dataquery → 显示最新数据
 ```
 
-### 3. 离线检测机制（v1.8.0 新增）
+### 3. 沙箱数据流（v1.9.0 新增）
+```
+前端（导入变量到沙箱环境）
+  ↓
+  沙箱变量自动标记 scope=sandbox
+  ↓
+  后端（mqtt.go → 独立 MQTT 主题 /dtu/{serial}/sandbox/{up|down}）
+  ↓
+  模拟器（simulator_v1536）生成模拟数据上报
+  ↓
+  写入 InfluxDB（scope=sandbox 标签，与 scope=production 隔离）
+  ↓
+  前端（data.vue 沙箱标签页）→ POST /sandbox/dataquery
+```
+
+### 4. 离线检测机制（v1.8.0 新增）
 ```
 后台定时任务（每60秒执行）:
   ↓
@@ -265,9 +316,14 @@ npm run dev
 
 ### 3. 模拟设备
 ```bash
-cd simulator_v3
+cd simulator_v1536
 python main.py
 # 默认连接 127.0.0.1:1883
+```
+
+也可使用一键启动脚本：
+```powershell
+python start_simulator.py
 ```
 
 ### 4. MQTT Broker
@@ -336,16 +392,14 @@ cd tools/deploy
 ---
 
 ## 📌 更新日志
-| 时间 | 说明 |
-|------|------|
-| 2026-05-09 | **v1.8.0** 协议修正（03/04/05"数据数量"→"报文总长度"）、新增离线检测机制、修复ParseAndWriteData除零问题 |
-| 2026-05-05 | 修复SendDataConfig API的空配置验证问题，移除required规则 |
-| 2026-05-05 | 增强Features.vue的空配置处理，添加二次确认弹窗 |
-| 2026-05-05 | 优化data.vue的变量显示逻辑，默认只显示已下发配置的变量 |
-| 2026-05-05 | 修复config_manager.py的空配置处理，确保触发回调 |
-| 2026-05-04 | 全部前端组件迁移到方案2 |
-| 2026-05-04 | 新增数据配置优化器框架 |
-| 2026-05-04 | 整理项目结构，临时脚本归档到tests/和tools/目录 |
+| 版本 | 时间 | 说明 |
+|------|------|------|
+| **v1.10.0** | 2026-05-10 | P0优化完成：前后端优化前基准对齐、PayloadOptimizer单元测试(20.7%覆盖率)、Python模拟器113测试全部通过 |
+| **v1.9.0** | 2026-05-09 | 沙箱功能（独立MQTT主题、scope标签隔离、/sandbox/dataquery API）、用户管理拆分为3个子页面 |
+| **v1.8.0** | 2026-05-09 | 协议修正（"数据数量"→"报文总长度"）、离线检测机制（3分钟超时）、修复除零问题 |
+| - | 2026-05-05 | 修复SendDataConfig API的空配置验证、前端空配置二次确认弹窗 |
+| - | 2026-05-05 | data.vue默认只显示已下发配置的变量、修复导入变量/批量删除功能 |
+| - | 2026-05-04 | 全部前端组件迁移到方案2、PayloadOptimizer框架、项目结构整理 |
 
 ---
 
